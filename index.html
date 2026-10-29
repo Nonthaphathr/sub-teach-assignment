@@ -263,6 +263,9 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-l);border-co
     <datalist id="modelList"></datalist>
     <div class="row"><button class="btn alt" data-act="loadModels">ทดสอบ key + โหลดรายชื่อโมเดล</button></div>
     <div class="hint">key ขอฟรีได้ที่ aistudio.google.com · เก็บใน Script Properties ฝั่งเซิร์ฟเวอร์ ไม่ออกมาที่หน้าเว็บ</div>
+    <label class="f" style="margin-top:12px">YouTube Data API key (ไม่บังคับ — ทำให้ AI หาคลิปแม่นขึ้น) <span id="ytState" class="badge"></span></label>
+    <input type="password" id="sYt" placeholder="วาง key เมื่อมี (เว้นว่าง = ไม่เปลี่ยน)" autocomplete="off"/>
+    <div class="hint">สร้างที่ console.cloud.google.com → เปิดใช้ “YouTube Data API v3” → สร้าง API key (ใช้ key คนละตัวกับ Gemini ก็ได้) · ถ้าไม่ใส่ ระบบจะอ่านผลค้นหาจากหน้า YouTube แทน</div>
   </div>
 
   <div class="card">
@@ -572,7 +575,7 @@ function renderHistory(){
   }).join('');
 }
 function renderSettings(){
-  $('#keyState').textContent=S.cfg.hasKey?'บันทึกแล้ว ✓':'ยังไม่ได้ตั้ง';
+  $('#keyState').textContent=S.cfg.hasKey?'บันทึกแล้ว ✓':'ยังไม่ได้ตั้ง';$('#ytState').textContent=S.cfg.hasYt?'บันทึกแล้ว ✓':'ยังไม่ได้ตั้ง';$('#sYt').value='';
   $('#sModel').value=S.cfg.model||'';$('#sTeacher').value=S.cfg.teacher||'';
   $('#sMaster').value=S.cfg.master||DEFAULT_MASTER;
   $('#sKey').value='';$('#sPin').value='';$('#sLogo').value=S.cfg.logo||DEFAULT_LOGO;$('#sTl').value=S.cfg.tlSheetId||'';$('#sFavicon').value=S.cfg.favicon||'';previewImgs();
@@ -700,10 +703,11 @@ var ACT={
     try{
       var m=$('#sMaster').value,body={model:$('#sModel').value.trim(),teacher:$('#sTeacher').value.trim(),master:m.trim()===DEFAULT_MASTER.trim()?'':m};
       if($('#sKey').value.trim())body.geminiKey=$('#sKey').value.trim();
+      if($('#sYt').value.trim())body.ytKey=$('#sYt').value.trim();
       var np=$('#sPin').value.trim();if(np)body.newPin=np;body.logo=$('#sLogo').value.trim();body.favicon=$('#sFavicon').value.trim();body.tlSheetId=$('#sTl').value.trim().replace(/^.*\/d\/([\w-]+).*$/,'$1');
       busy('กำลังบันทึก…');
       await api('apiSaveSettings',body);
-      S.cfg.model=body.model;S.cfg.teacher=body.teacher;S.cfg.master=body.master;S.cfg.logo=body.logo;S.cfg.favicon=body.favicon;S.cfg.tlSheetId=body.tlSheetId;if(body.geminiKey)S.cfg.hasKey=true;
+      S.cfg.model=body.model;S.cfg.teacher=body.teacher;S.cfg.master=body.master;S.cfg.logo=body.logo;S.cfg.favicon=body.favicon;S.cfg.tlSheetId=body.tlSheetId;if(body.geminiKey)S.cfg.hasKey=true;if(body.ytKey)S.cfg.hasYt=true;
       if(np)pinSet(np);
       applyBrand();writeCache();renderSettings();toast('บันทึกการตั้งค่าแล้ว');
     }catch(e){toast(e.message,true)}finally{unbusy()}

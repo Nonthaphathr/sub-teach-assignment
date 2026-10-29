@@ -108,6 +108,7 @@ function bootData_() {
     assigns: readAssigns_(),
     cfg: {
       hasKey: !!P.getProperty('GEMINI_KEY'),
+      hasYt: !!P.getProperty('YT_API_KEY'),
       model: P.getProperty('GEMINI_MODEL') || '',
       teacher: P.getProperty('TEACHER') || 'ครูนนท์',
       master: P.getProperty('MASTER_PROMPT') || '',
@@ -296,6 +297,7 @@ function apiSaveSettings(pin, json) {
   checkPin_(pin);
   const s = JSON.parse(json), P = PropertiesService.getScriptProperties();
   if (s.geminiKey) P.setProperty('GEMINI_KEY', String(s.geminiKey).trim());
+  if (s.ytKey) P.setProperty('YT_API_KEY', String(s.ytKey).trim());
   if (s.model != null) P.setProperty('GEMINI_MODEL', String(s.model).trim());
   if (s.teacher != null) P.setProperty('TEACHER', String(s.teacher).trim());
   [['logo', 'LOGO_URL', 'โลโก้'], ['favicon', 'FAVICON_URL', 'favicon']].forEach(function (m) {
@@ -517,44 +519,64 @@ function ytIds_(text, add) {
   while ((m = re.exec(String(text || ''))) !== null) add(m[1]);
 }
 
-// ให้ Gemini ค้นเว็บหาคลิป YouTube ภาษาไทยตามหัวข้อ แล้วตรวจทุกลิงก์ด้วย oEmbed (กันลิงก์ที่ AI แต่งขึ้น)
+// หาคลิป YouTube ภาษาไทยตามหัวข้อ: (1) YouTube Data API ถ้าตั้ง YT_API_KEY  (2) อ่านผลค้นหาหน้า YouTube  (3) Gemini + Google Search (โควตาฟรีน้อย ใช้เป็นตัวสุดท้าย)
+// ทุกลิงก์ตรวจด้วย oEmbed ว่ามีคลิปอยู่จริง กันลิงก์ที่ AI แต่งขึ้น
 function apiFindClips(pin, json) {
   checkPin_(pin);
   const p = JSON.parse(json);
   const topic = String(p.topic || '').trim();
   if (!topic) throw new Error('ยังไม่ระบุเรื่อง/หัวข้อ');
-  const seen = {}, ids = [];
+  const P = PropertiesService.getScriptProperties();
+  const seen = {}, ids = [], notes = [];
   const add = function (id) { if (id && !seen[id]) { seen[id] = 1; ids.push(id); } };
-  let note = '';
   const q = topic + ' ภาษาไทย ' + (p.level || '') + ' สอน';
-  try {
-    const prompt = 'ค้นหาคลิปวิดีโอบน YouTube ภาษาไทยที่อธิบายหรือสอนเรื่อง "' + topic + '" วิชา' + (p.subject || 'ภาษาไทย') +
-      (p.level ? ' ระดับชั้น' + p.level : '') + ' ให้นักเรียนมัธยมดูเข้าใจง่าย ความยาวไม่เกินประมาณ 20 นาที เนื้อหาถูกต้อง\n' +
-      (p.indicators ? 'ตัวชี้วัด/จุดประสงค์: ' + p.indicators + '\n' : '') +
-      'ตอบเป็นรายการ 6-8 ข้อ แต่ละข้อมีชื่อคลิป ชื่อช่อง และลิงก์ YouTube ที่ขึ้นต้นด้วย https://www.youtube.com/watch?v= ตรง ๆ ' +
-      'ห้ามแต่งหรือเดาลิงก์ ถ้าไม่พบให้ตอบเท่าที่พบจริง';
-    const r = gemini_(prompt, null, { search: true, temperature: 0.2 });
-    ytIds_(r.text, add);
-    const chunks = (r.grounding && r.grounding.groundingChunks) || [];
-    chunks.forEach(function (c) { ytIds_(c && c.web && c.web.uri, add); });
-  } catch (e) { note = 'ค้นด้วย AI: ' + String(e && e.message || e); }
-  if (ids.length < 4) {   // สำรอง: อ่านผลค้นหาหน้า YouTube
+
+  // 1) YouTube Data API (ไม่บังคับ — ใส่ key ที่แท็บตั้งค่า)
+  const ytKey = P.getProperty('YT_API_KEY');
+  if (ytKey) {
+    try {
+      const r = UrlFetchApp.fetch('https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=10&relevanceLanguage=th&regionCode=TH&safeSearch=strict&q=' +
+        encodeURIComponent(q) + '&key=' + encodeURIComponent(ytKey), { muteHttpExceptions: true });
+      if (r.getResponseCode() === 200) {
+        (JSON.parse(r.getContentText()).items || []).forEach(function (it) { add(it.id && it.id.videoId); });
+      } else {
+        let m = r.getContentText().slice(0, 160);
+        try { m = JSON.parse(r.getContentText()).error.message; } catch (e) { }
+        notes.push('YouTube API ' + r.getResponseCode() + ': ' + String(m).slice(0, 140));
+      }
+    } catch (e) { notes.push('YouTube API: ' + String(e && e.message || e).slice(0, 120)); }
+  }
+
+  // 2) อ่านผลค้นหาจากหน้า YouTube
+  if (ids.length < 5) {
     try {
       const res = UrlFetchApp.fetch('https://www.youtube.com/results?hl=th&search_query=' + encodeURIComponent(q), {
         muteHttpExceptions: true,
-        headers: { 'Accept-Language': 'th-TH,th;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36' }
+        headers: { 'Accept-Language': 'th-TH,th;q=0.9', 'Cookie': 'CONSENT=YES+1; SOCS=CAI',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36' }
       });
-      const sc = res.getResponseCode();
-      if (sc !== 200) note += ' | ค้นหน้า YouTube ไม่ได้ (' + sc + ')';
-      if (sc === 200) {
-        const re = /"videoId":"([\w-]{11})"/g, html = res.getContentText();
-        let m, n = 0;
-        while ((m = re.exec(html)) !== null && n < 10) { if (!seen[m[1]]) { add(m[1]); n++; } }
-      }
-    } catch (e) { }
+      const sc = res.getResponseCode(), html = sc === 200 ? res.getContentText() : '';
+      let n = 0, m;
+      const re1 = /"videoRenderer":\{"videoId":"([\w-]{11})"/g;
+      while ((m = re1.exec(html)) !== null && n < 10) { if (!seen[m[1]]) { add(m[1]); n++; } }
+      if (!n) { const re2 = /"videoId":"([\w-]{11})"/g; while ((m = re2.exec(html)) !== null && n < 10) { if (!seen[m[1]]) { add(m[1]); n++; } } }
+      if (!n) notes.push('อ่านหน้าค้นหา YouTube ไม่ได้ผล (status ' + sc + ', ' + html.length + ' ตัวอักษร)');
+    } catch (e) { notes.push('อ่านหน้า YouTube: ' + String(e && e.message || e).slice(0, 120)); }
   }
-  const cand = ids.slice(0, 16);
-  const clips = [];
+
+  // 3) Gemini + Google Search (ถ้ายังได้น้อย) — ถ้าโควตาเต็มจะข้ามไปเงียบ ๆ
+  if (ids.length < 3) {
+    try {
+      const prompt = 'ค้นหาคลิปวิดีโอบน YouTube ภาษาไทยที่อธิบายหรือสอนเรื่อง "' + topic + '" วิชา' + (p.subject || 'ภาษาไทย') +
+        (p.level ? ' ระดับชั้น' + p.level : '') + ' ให้นักเรียนมัธยมดูเข้าใจง่าย ความยาวไม่เกินประมาณ 20 นาที\n' +
+        'ตอบเป็นรายการ 6-8 ข้อ แต่ละข้อมีชื่อคลิป ชื่อช่อง และลิงก์ https://www.youtube.com/watch?v= ตรง ๆ ห้ามแต่งหรือเดาลิงก์';
+      const r = gemini_(prompt, null, { search: true, temperature: 0.2 });
+      ytIds_(r.text, add);
+      ((r.grounding && r.grounding.groundingChunks) || []).forEach(function (c) { ytIds_(c && c.web && c.web.uri, add); });
+    } catch (e) { notes.push('AI ค้นเว็บ: ' + String(e && e.message || e).replace(/^.*?— /, '').slice(0, 160)); }
+  }
+
+  const cand = ids.slice(0, 16), clips = [];
   if (cand.length) {
     const reqs = cand.map(function (id) {
       return { url: 'https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent('https://www.youtube.com/watch?v=' + id), muteHttpExceptions: true };
@@ -566,9 +588,10 @@ function apiFindClips(pin, json) {
         clips.push({ id: cand[i], url: 'https://www.youtube.com/watch?v=' + cand[i], title: j.title || '', channel: j.author_name || '', thumb: j.thumbnail_url || '' });
       } catch (e) { }
     });
+    if (!clips.length) notes.push('พบ ' + cand.length + ' ลิงก์ แต่ตรวจกับ YouTube แล้วเปิดไม่ได้');
   }
   clips.sort(function (a, b) { return (/ครูนนท์/.test(b.channel) ? 1 : 0) - (/ครูนนท์/.test(a.channel) ? 1 : 0); }); // ช่องของครูนนท์ขึ้นก่อน
-  return JSON.stringify({ clips: clips.slice(0, 8), searchUrl: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(q), note: clips.length ? '' : note });
+  return JSON.stringify({ clips: clips.slice(0, 8), searchUrl: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(q), note: clips.length ? '' : notes.join(' | ') });
 }
 
 /* ============================ คลังเนื้อหา (สรุปจากบันทึก teachinglog) ============================ */
