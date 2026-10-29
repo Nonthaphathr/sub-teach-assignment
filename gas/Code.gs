@@ -396,7 +396,8 @@ function gemini_(prompt, schema, opts) {
   if (!key) throw new Error('ยังไม่ได้ตั้งค่า Gemini API key — ไปที่แท็บ "ตั้งค่า"');
   const main = P.getProperty('GEMINI_MODEL') || 'gemini-flash-latest';
   // ถ้าโมเดลหลักไม่ว่าง (503/429) หรือใช้ไม่ได้ (404) ให้ลองโมเดลสำรองต่อทันที ไม่ต้องรอนาน
-  const models = [main].concat(['gemini-flash-lite-latest', 'gemini-2.5-flash'].filter(function (m) { return m !== main; }));
+  const models = [main].concat(['gemini-flash-lite-latest'].filter(function (m) { return m !== main; }));
+  const errs = [];
   const gen = { temperature: opts.temperature != null ? opts.temperature : 0.7 };
   if (schema) { gen.responseMimeType = 'application/json'; gen.responseSchema = schema; }
   const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: gen };
@@ -408,7 +409,7 @@ function gemini_(prompt, schema, opts) {
     const req = { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': key }, payload: payload };
     for (let t = 0; t < 2; t++) {
       let res;
-      try { res = UrlFetchApp.fetch(url, req); } catch (e) { last = 'เรียก Gemini ไม่สำเร็จ (' + models[mi] + '): ' + (e && e.message || e); break; }
+      try { res = UrlFetchApp.fetch(url, req); } catch (e) { last = 'เรียก Gemini ไม่สำเร็จ (' + models[mi] + '): ' + (e && e.message || e); errs.push(String(last).slice(0, 160)); break; }
       const code = res.getResponseCode(), txt = res.getContentText();
       if (code === 200) {
         const j = JSON.parse(txt);
@@ -422,12 +423,13 @@ function gemini_(prompt, schema, opts) {
       let m = txt.slice(0, 300);
       try { m = JSON.parse(txt).error.message; } catch (e) { }
       last = 'Gemini ' + code + ' (' + models[mi] + '): ' + m;
+      errs.push(code + ' ' + models[mi] + ': ' + String(m).slice(0, 140));
       if (code === 503 || code === 429) { if (t === 0) { Utilities.sleep(2000); continue; } break; }
       if (code === 404 || (code === 400 && !/api key/i.test(m))) break;   // โมเดลนี้ใช้ไม่ได้ → ลองตัวถัดไป
       throw new Error(last);                                                // key ผิด/ไม่มีสิทธิ์ ฯลฯ
     }
   }
-  throw new Error('AI ไม่ว่างชั่วคราว ลองใหม่ในอีก 1-2 นาที — ' + last);
+  throw new Error('AI ใช้งานไม่ได้ชั่วคราว ลองใหม่ในอีก 1-2 นาที — ' + (errs.join(' | ') || last).slice(0, 700));
 }
 
 function shuffleQ_(q) {
@@ -535,14 +537,16 @@ function apiFindClips(pin, json) {
     ytIds_(r.text, add);
     const chunks = (r.grounding && r.grounding.groundingChunks) || [];
     chunks.forEach(function (c) { ytIds_(c && c.web && c.web.uri, add); });
-  } catch (e) { note = String(e && e.message || e); }
+  } catch (e) { note = 'ค้นด้วย AI: ' + String(e && e.message || e); }
   if (ids.length < 4) {   // สำรอง: อ่านผลค้นหาหน้า YouTube
     try {
       const res = UrlFetchApp.fetch('https://www.youtube.com/results?hl=th&search_query=' + encodeURIComponent(q), {
         muteHttpExceptions: true,
         headers: { 'Accept-Language': 'th-TH,th;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36' }
       });
-      if (res.getResponseCode() === 200) {
+      const sc = res.getResponseCode();
+      if (sc !== 200) note += ' | ค้นหน้า YouTube ไม่ได้ (' + sc + ')';
+      if (sc === 200) {
         const re = /"videoId":"([\w-]{11})"/g, html = res.getContentText();
         let m, n = 0;
         while ((m = re.exec(html)) !== null && n < 10) { if (!seen[m[1]]) { add(m[1]); n++; } }
