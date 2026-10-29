@@ -18,6 +18,9 @@
 
 const SH_TT = 'ตารางสอน';
 const SH_AS = 'งานที่มอบหมาย';
+const SH_BK = 'คลังเนื้อหา';
+const BK_KEYS = ['id', 'level', 'code', 'subject', 'topic', 'story', 'dates', 'created', 'used', 'lastUsed'];
+const BK_HEAD = ['id', 'ชั้น', 'รหัสวิชา', 'วิชา', 'หัวข้อ', 'เนื้อหา (เขียนเป็นเรื่อง)', 'วันที่สอน', 'สร้างเมื่อ', 'ใช้ไปแล้ว (ครั้ง)', 'ใช้ล่าสุด'];
 const TT_HEAD = ['วัน (1=จันทร์ … 5=ศุกร์)', 'คาบ', 'เวลา', 'ชั้น', 'รหัสวิชา', 'วิชา', 'ภาคเรียน', 'เริ่มใช้ (ปปปป-ดด-วว)'];
 const SEED_TERM = '2/2569', SEED_START = '2026-10-19'; // ตารางสอนตั้งต้น เริ่มใช้ 19 ต.ค. 2569
 const AS_KEYS = ['id', 'created', 'date', 'period', 'time', 'level', 'code', 'subject', 'topic', 'indicators',
@@ -73,7 +76,9 @@ const API = {
   apiBoot: apiBoot, apiSaveAssignment: apiSaveAssignment, apiDeleteAssignment: apiDeleteAssignment,
   apiSaveSettings: apiSaveSettings, apiListModels: apiListModels, apiPrepare: apiPrepare, apiUpload: apiUpload,
   apiGenQuiz: apiGenQuiz, apiGenTask: apiGenTask, apiCreateForm: apiCreateForm,
-  apiImportTimetable: apiImportTimetable, apiDeleteTerm: apiDeleteTerm
+  apiImportTimetable: apiImportTimetable, apiDeleteTerm: apiDeleteTerm,
+  apiFindClips: apiFindClips, apiSyncBank: apiSyncBank, apiBankList: apiBankList, apiBankGet: apiBankGet,
+  apiRandomBank: apiRandomBank, apiMarkBankUsed: apiMarkBankUsed, apiDeleteBank: apiDeleteBank
 };
 
 function doPost(e) {
@@ -107,8 +112,11 @@ function bootData_() {
       teacher: P.getProperty('TEACHER') || 'ครูนนท์',
       master: P.getProperty('MASTER_PROMPT') || '',
       logo: P.getProperty('LOGO_URL') || '',
-      favicon: P.getProperty('FAVICON_URL') || ''
+      favicon: P.getProperty('FAVICON_URL') || '',
+      tlSheetId: P.getProperty('TL_SHEET_ID') || '',
+      tlLast: P.getProperty('TL_LASTSYNC') || ''
     },
+    bank: readBank_(false),
     folders: folders,
     ssUrl: SpreadsheetApp.getActive().getUrl()
   };
@@ -155,7 +163,13 @@ function ensureSheets_() {
     as.getRange(1, 1, 1, AS_HEAD.length).setValues([AS_HEAD]).setFontWeight('bold').setBackground('#bfdbfe');
     as.setFrozenRows(1);
   }
-  return { tt: tt, as: as };
+  let bk = ss.getSheetByName(SH_BK);
+  if (!bk) {
+    bk = ss.insertSheet(SH_BK);
+    bk.getRange(1, 1, 1, BK_HEAD.length).setValues([BK_HEAD]).setFontWeight('bold').setBackground('#bbf7d0');
+    bk.setFrozenRows(1);
+  }
+  return { tt: tt, as: as, bk: bk };
 }
 
 function rawTT_() {
@@ -292,6 +306,12 @@ function apiSaveSettings(pin, json) {
     if (v.length > 1500) throw new Error('ลิงก์' + m[2] + 'ยาวเกินไป');
     P.setProperty(m[1], v);
   });
+  if (s.tlSheetId != null) {
+    const v = String(s.tlSheetId).trim().replace(/^.*\/d\/([\w-]+).*$/, '$1');
+    if (!v) P.deleteProperty('TL_SHEET_ID');
+    else if (!/^[\w-]{20,}$/.test(v)) throw new Error('รหัสชีต teachinglog ไม่ถูกต้อง (วางลิงก์ชีตทั้งลิงก์ก็ได้)');
+    else { P.setProperty('TL_SHEET_ID', v); P.deleteProperty('TL_CURSOR'); }
+  }
   if (s.master != null) {
     if (!String(s.master).trim()) P.deleteProperty('MASTER_PROMPT');
     else {
@@ -369,31 +389,35 @@ function apiUpload(pin, json) {
 
 /* ============================ Gemini ============================ */
 
-function gemini_(prompt, schema) {
+function gemini_(prompt, schema, opts) {
+  opts = opts || {};
   const P = PropertiesService.getScriptProperties();
   const key = P.getProperty('GEMINI_KEY');
   if (!key) throw new Error('ยังไม่ได้ตั้งค่า Gemini API key — ไปที่แท็บ "ตั้งค่า"');
   const main = P.getProperty('GEMINI_MODEL') || 'gemini-flash-latest';
   // ถ้าโมเดลหลักไม่ว่าง (503/429) หรือใช้ไม่ได้ (404) ให้ลองโมเดลสำรองต่อทันที ไม่ต้องรอนาน
   const models = [main].concat(['gemini-flash-lite-latest', 'gemini-2.5-flash'].filter(function (m) { return m !== main; }));
-  const payload = JSON.stringify({
-    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.7, responseMimeType: 'application/json', responseSchema: schema }
-  });
+  const gen = { temperature: opts.temperature != null ? opts.temperature : 0.7 };
+  if (schema) { gen.responseMimeType = 'application/json'; gen.responseSchema = schema; }
+  const body = { contents: [{ role: 'user', parts: [{ text: prompt }] }], generationConfig: gen };
+  if (opts.search) body.tools = [{ google_search: {} }];   // ให้ Gemini ค้นเว็บ (ใช้หาคลิป) — โหมดนี้ไม่บังคับ JSON schema
+  const payload = JSON.stringify(body);
   let last = '';
   for (let mi = 0; mi < models.length; mi++) {
     const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(models[mi]) + ':generateContent';
-    const opts = { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': key }, payload: payload };
+    const req = { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': key }, payload: payload };
     for (let t = 0; t < 2; t++) {
       let res;
-      try { res = UrlFetchApp.fetch(url, opts); } catch (e) { last = 'เรียก Gemini ไม่สำเร็จ (' + models[mi] + '): ' + (e && e.message || e); break; }
+      try { res = UrlFetchApp.fetch(url, req); } catch (e) { last = 'เรียก Gemini ไม่สำเร็จ (' + models[mi] + '): ' + (e && e.message || e); break; }
       const code = res.getResponseCode(), txt = res.getContentText();
       if (code === 200) {
         const j = JSON.parse(txt);
-        const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
+        const cand = j.candidates && j.candidates[0];
+        const parts = cand && cand.content && cand.content.parts;
         const out = parts ? parts.map(function (p) { return p.text || ''; }).join('') : '';
         if (!out) throw new Error('Gemini ไม่ส่งผลลัพธ์กลับมา (อาจถูกกรองเนื้อหา) — ลองใหม่อีกครั้ง');
-        return JSON.parse(out);
+        if (schema) return JSON.parse(out);
+        return { text: out, grounding: (cand && cand.groundingMetadata) || null };
       }
       let m = txt.slice(0, 300);
       try { m = JSON.parse(txt).error.message; } catch (e) { }
@@ -479,6 +503,217 @@ function apiGenTask(pin, json) {
     'ตอบเป็นข้อความธรรมดา ขึ้นต้นแต่ละข้อด้วยเลข 1) 2) 3)';
   const r = gemini_(prompt, { type: 'OBJECT', properties: { task: { type: 'STRING' } }, required: ['task'] });
   return JSON.stringify({ task: String(r.task || '').trim() });
+}
+
+/* ============================ ค้นหาคลิปสอนด้วย AI ============================ */
+
+const YT_RE = /(?:youtube\.com\/(?:watch\?(?:[^\s"')]*&)?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/g;
+
+function ytIds_(text, add) {
+  const re = new RegExp(YT_RE.source, 'g');
+  let m;
+  while ((m = re.exec(String(text || ''))) !== null) add(m[1]);
+}
+
+// ให้ Gemini ค้นเว็บหาคลิป YouTube ภาษาไทยตามหัวข้อ แล้วตรวจทุกลิงก์ด้วย oEmbed (กันลิงก์ที่ AI แต่งขึ้น)
+function apiFindClips(pin, json) {
+  checkPin_(pin);
+  const p = JSON.parse(json);
+  const topic = String(p.topic || '').trim();
+  if (!topic) throw new Error('ยังไม่ระบุเรื่อง/หัวข้อ');
+  const seen = {}, ids = [];
+  const add = function (id) { if (id && !seen[id]) { seen[id] = 1; ids.push(id); } };
+  let note = '';
+  const q = topic + ' ภาษาไทย ' + (p.level || '') + ' สอน';
+  try {
+    const prompt = 'ค้นหาคลิปวิดีโอบน YouTube ภาษาไทยที่อธิบายหรือสอนเรื่อง "' + topic + '" วิชา' + (p.subject || 'ภาษาไทย') +
+      (p.level ? ' ระดับชั้น' + p.level : '') + ' ให้นักเรียนมัธยมดูเข้าใจง่าย ความยาวไม่เกินประมาณ 20 นาที เนื้อหาถูกต้อง\n' +
+      (p.indicators ? 'ตัวชี้วัด/จุดประสงค์: ' + p.indicators + '\n' : '') +
+      'ตอบเป็นรายการ 6-8 ข้อ แต่ละข้อมีชื่อคลิป ชื่อช่อง และลิงก์ YouTube ที่ขึ้นต้นด้วย https://www.youtube.com/watch?v= ตรง ๆ ' +
+      'ห้ามแต่งหรือเดาลิงก์ ถ้าไม่พบให้ตอบเท่าที่พบจริง';
+    const r = gemini_(prompt, null, { search: true, temperature: 0.2 });
+    ytIds_(r.text, add);
+    const chunks = (r.grounding && r.grounding.groundingChunks) || [];
+    chunks.forEach(function (c) { ytIds_(c && c.web && c.web.uri, add); });
+  } catch (e) { note = String(e && e.message || e); }
+  if (ids.length < 4) {   // สำรอง: อ่านผลค้นหาหน้า YouTube
+    try {
+      const res = UrlFetchApp.fetch('https://www.youtube.com/results?hl=th&search_query=' + encodeURIComponent(q), {
+        muteHttpExceptions: true,
+        headers: { 'Accept-Language': 'th-TH,th;q=0.9', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36' }
+      });
+      if (res.getResponseCode() === 200) {
+        const re = /"videoId":"([\w-]{11})"/g, html = res.getContentText();
+        let m, n = 0;
+        while ((m = re.exec(html)) !== null && n < 10) { if (!seen[m[1]]) { add(m[1]); n++; } }
+      }
+    } catch (e) { }
+  }
+  const cand = ids.slice(0, 16);
+  const clips = [];
+  if (cand.length) {
+    const reqs = cand.map(function (id) {
+      return { url: 'https://www.youtube.com/oembed?format=json&url=' + encodeURIComponent('https://www.youtube.com/watch?v=' + id), muteHttpExceptions: true };
+    });
+    UrlFetchApp.fetchAll(reqs).forEach(function (r, i) {
+      if (r.getResponseCode() !== 200) return;
+      try {
+        const j = JSON.parse(r.getContentText());
+        clips.push({ id: cand[i], url: 'https://www.youtube.com/watch?v=' + cand[i], title: j.title || '', channel: j.author_name || '', thumb: j.thumbnail_url || '' });
+      } catch (e) { }
+    });
+  }
+  clips.sort(function (a, b) { return (/ครูนนท์/.test(b.channel) ? 1 : 0) - (/ครูนนท์/.test(a.channel) ? 1 : 0); }); // ช่องของครูนนท์ขึ้นก่อน
+  return JSON.stringify({ clips: clips.slice(0, 8), searchUrl: 'https://www.youtube.com/results?search_query=' + encodeURIComponent(q), note: clips.length ? '' : note });
+}
+
+/* ============================ คลังเนื้อหา (สรุปจากบันทึก teachinglog) ============================ */
+
+function readBank_(withStory) {
+  const sh = ensureSheets_().bk, last = sh.getLastRow();
+  if (last < 2) return [];
+  const out = [];
+  sh.getRange(2, 1, last - 1, BK_KEYS.length).getValues().forEach(function (r) {
+    if (!r[0]) return;
+    const o = {};
+    BK_KEYS.forEach(function (k, i) { o[k] = s_(r[i]); });
+    o.used = +o.used || 0;
+    o.len = o.story.length;
+    if (withStory) { /* เก็บ story ไว้ */ } else { o.snip = o.story.replace(/\s+/g, ' ').slice(0, 140); delete o.story; }
+    out.push(o);
+  });
+  return out.reverse(); // ใหม่สุดก่อน
+}
+
+function bankRowIdx_(sh, id) {
+  const last = sh.getLastRow();
+  if (last < 2) return -1;
+  const ids = sh.getRange(2, 1, last - 1, 1).getValues();
+  for (let i = 0; i < ids.length; i++) if (String(ids[i][0]) === String(id)) return i + 2;
+  return -1;
+}
+
+function apiBankList(pin) {
+  checkPin_(pin);
+  return JSON.stringify({ bank: readBank_(false) });
+}
+
+function apiBankGet(pin, json) {
+  checkPin_(pin);
+  const id = String(JSON.parse(json).id || '');
+  const it = readBank_(true).filter(function (x) { return x.id === id; })[0];
+  if (!it) throw new Error('ไม่พบรายการในคลัง');
+  return JSON.stringify({ item: it });
+}
+
+function apiDeleteBank(pin, json) {
+  checkPin_(pin);
+  const id = String(JSON.parse(json).id || '');
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const sh = ensureSheets_().bk, r = bankRowIdx_(sh, id);
+    if (r > 0) sh.deleteRow(r);
+  } finally { lock.releaseLock(); }
+  return JSON.stringify({ ok: true, bank: readBank_(false) });
+}
+
+// สุ่มเนื้อหาจากคลัง (ไม่เรียก AI) — เลือกจากรายการที่ถูกใช้น้อยที่สุดก่อน กันซ้ำ
+function apiRandomBank(pin, json) {
+  checkPin_(pin);
+  const p = JSON.parse(json || '{}');
+  let rows = readBank_(true);
+  if (p.level) rows = rows.filter(function (x) { return x.level === p.level; });
+  if (!rows.length) throw new Error('คลังยังไม่มีเนื้อหา' + (p.level ? 'ของ ' + p.level : '') + ' — ไปแท็บ "คลังเนื้อหา" แล้วกดซิงก์จาก teachinglog ก่อน');
+  const min = Math.min.apply(null, rows.map(function (x) { return x.used; }));
+  let pool = rows.filter(function (x) { return x.used === min; });
+  if (p.excludeId && pool.length > 1) pool = pool.filter(function (x) { return x.id !== p.excludeId; });
+  return JSON.stringify({ item: pool[Math.floor(Math.random() * pool.length)], count: rows.length });
+}
+
+function apiMarkBankUsed(pin, json) {
+  checkPin_(pin);
+  const id = String(JSON.parse(json).id || '');
+  const lock = LockService.getScriptLock(); lock.waitLock(20000);
+  try {
+    const sh = ensureSheets_().bk, r = bankRowIdx_(sh, id);
+    if (r > 0) {
+      const ui = BK_KEYS.indexOf('used') + 1, li = BK_KEYS.indexOf('lastUsed') + 1;
+      const cur = +sh.getRange(r, ui).getValue() || 0;
+      sh.getRange(r, ui).setNumberFormat('@').setValue(String(cur + 1));
+      sh.getRange(r, li).setNumberFormat('@').setValue(Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd'));
+    }
+  } finally { lock.releaseLock(); }
+  return JSON.stringify({ ok: true });
+}
+
+// ซิงก์บันทึกใหม่จากชีต teachinglog (แท็บ Notes) มาให้ AI สรุปเป็นเรื่อง เก็บลงคลัง — ทำครั้งละ 30 บันทึก (เรียกซ้ำจนกว่า remaining = 0)
+// ใช้ AI เฉพาะตอนกดซิงก์ ตอนสุ่มไม่ใช้ AI  |  p = {reset?:true} เพื่อล้างคลังแล้วเริ่มใหม่ทั้งหมด
+function apiSyncBank(pin, json) {
+  checkPin_(pin);
+  const p = JSON.parse(json || '{}');
+  const P = PropertiesService.getScriptProperties();
+  const tlId = P.getProperty('TL_SHEET_ID');
+  if (!tlId) throw new Error('ยังไม่ได้ตั้งรหัสชีต teachinglog — ไปที่แท็บ "ตั้งค่า"');
+  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    const bk = ensureSheets_().bk;
+    if (p.reset) {
+      const l0 = bk.getLastRow();
+      if (l0 > 1) bk.getRange(2, 1, l0 - 1, BK_KEYS.length).clearContent();
+      P.deleteProperty('TL_CURSOR');
+    }
+    let tl;
+    try { tl = SpreadsheetApp.openById(tlId); } catch (e) { throw new Error('เปิดชีต teachinglog ไม่ได้ — ตรวจรหัสชีตและสิทธิ์ของบัญชีนี้'); }
+    const sh = tl.getSheetByName('Notes');
+    if (!sh) throw new Error('ไม่พบแท็บชื่อ Notes ในชีต teachinglog');
+    const last = sh.getLastRow();
+    const cursor = Math.max(1, +(P.getProperty('TL_CURSOR') || 1));
+    const total0 = Math.max(0, bk.getLastRow() - 1);
+    if (last <= cursor) return JSON.stringify({ ok: true, added: 0, processed: 0, remaining: 0, total: total0 });
+    const from = cursor + 1, to = Math.min(last, cursor + 30);
+    const notes = sh.getRange(from, 1, to - from + 1, 8).getValues().map(function (r) {
+      return { date: s_(r[6]), level: s_(r[5]), code: s_(r[3]), subject: s_(r[4]), text: s_(r[7]).trim() };
+    }).filter(function (n) { return n.text; });
+    let added = 0;
+    if (notes.length) {
+      const prompt =
+        'คุณเป็นครูภาษาไทยมัธยมศึกษา ช่วยจัดทำ "คลังเนื้อหา" จากบันทึกการสอนที่ครูจดไว้ (วันที่ ชั้น วิชา ข้อความ) ดังนี้\n\n' +
+        notes.map(function (n, i) { return (i + 1) + ') [' + n.date + '] ' + n.level + ' ' + n.code + ' ' + n.subject + ': ' + n.text.replace(/\n+/g, ' / '); }).join('\n') +
+        '\n\nงาน: จัดกลุ่มบันทึกที่สอนเรื่องเดียวกัน (ชั้นเดียวกัน) เป็น 1 รายการต่อ 1 หัวข้อ แล้วเขียน story เป็นเรื่องเล่าต่อเนื่อง (ร้อยแก้ว 1-3 ย่อหน้า ราว 120-250 คำ) ' +
+        'อธิบายสาระความรู้ของหัวข้อนั้นที่นักเรียนได้เรียน ให้เหมาะกับการนำไปให้นักเรียนอ่านทบทวนเอง\n' +
+        'กติกา:\n- ข้ามบันทึกที่ไม่ใช่เนื้อหาการสอน (เช่น ติดตามนักเรียน 0 ร มส ประชุม สอบ ไม่มีการสอน กิจกรรมทั่วไป)\n' +
+        '- ยึดสาระจากบันทึกเป็นหลัก ถ้าจะเสริมความรู้ ให้เสริมเฉพาะหลักภาษาไทยที่ถูกต้องแน่นอน ห้ามแต่งตัวอย่างหรือข้อเท็จจริงที่ไม่แน่ใจ\n' +
+        '- ห้ามเล่าวิธีสอน/คลิป/เกม/ใบงาน/คะแนนของครู ให้เล่าเฉพาะสาระความรู้\n' +
+        '- topic คือชื่อหัวข้อสั้น ๆ  dates คือวันที่สอน (yyyy-mm-dd คั่นด้วยจุลภาค)  level/code/subject ใช้ตามบันทึก';
+      const schema = {
+        type: 'OBJECT',
+        properties: { items: { type: 'ARRAY', items: { type: 'OBJECT', properties: {
+          level: { type: 'STRING' }, code: { type: 'STRING' }, subject: { type: 'STRING' },
+          topic: { type: 'STRING' }, story: { type: 'STRING' }, dates: { type: 'STRING' } },
+          required: ['level', 'topic', 'story'] } } },
+        required: ['items']
+      };
+      const r = gemini_(prompt, schema);
+      const have = {};
+      readBank_(false).forEach(function (x) { have[x.level + '|' + x.topic.replace(/\s+/g, '')] = 1; });
+      const now = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd HH:mm');
+      const rows = [];
+      (r.items || []).forEach(function (it) {
+        const level = String(it.level || '').trim(), topic = String(it.topic || '').trim(), story = String(it.story || '').trim();
+        if (!level || !topic || story.length < 40 || have[level + '|' + topic.replace(/\s+/g, '')]) return;
+        have[level + '|' + topic.replace(/\s+/g, '')] = 1;
+        rows.push(['B' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), level, String(it.code || '').trim(), String(it.subject || '').trim(), topic, story.slice(0, 20000), String(it.dates || ''), now, '0', '']);
+      });
+      if (rows.length) {
+        const rng = bk.getRange(bk.getLastRow() + 1, 1, rows.length, BK_KEYS.length);
+        rng.setNumberFormat('@'); rng.setValues(rows);
+      }
+      added = rows.length;
+    }
+    P.setProperty('TL_CURSOR', String(to));
+    P.setProperty('TL_LASTSYNC', Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd HH:mm'));
+    return JSON.stringify({ ok: true, added: added, processed: to - from + 1, remaining: last - to, total: Math.max(0, bk.getLastRow() - 1), last: P.getProperty('TL_LASTSYNC') });
+  } finally { lock.releaseLock(); }
 }
 
 /* ============================ Google Form ============================ */

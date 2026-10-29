@@ -128,6 +128,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-l);border-co
   <div class="tabs">
     <button class="tab on" data-act="tab" data-t="assign">มอบหมายงาน</button>
     <button class="tab" data-act="tab" data-t="history">ประวัติ</button>
+    <button class="tab" data-act="tab" data-t="bank">คลังเนื้อหา</button>
     <button class="tab" data-act="tab" data-t="settings">ตั้งค่า</button>
     <button class="tab" id="btnInstall" data-act="install" hidden>⬇<span class="itxt"> ติดตั้งแอป</span></button>
   </div>
@@ -158,6 +159,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-l);border-co
 
   <div class="card">
     <h2><span class="no">2</span>เนื้อหาที่จะให้เรียน</h2>
+    <div class="row" style="margin-top:0"><button class="btn warn" data-act="randBank">🎲 สุ่มเนื้อหาจากคลัง</button><span id="bankNote" class="hint">เนื้อหาที่เคยสอนแล้ว — สุ่มโดยไม่ใช้ AI</span></div>
     <label class="f">เรื่อง / หัวข้อ *</label>
     <input type="text" data-k="topic" placeholder="เช่น การเขียนเรียงความ, คำราชาศัพท์, กาพย์ยานี 11"/>
     <label class="f">ตัวชี้วัด / จุดประสงค์ (ไม่บังคับ)</label>
@@ -166,6 +168,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-l);border-co
     <textarea data-k="ref" rows="3" placeholder="วางเนื้อหาที่อยากให้ AI อิงเป็นหลัก"></textarea>
     <label class="f">ลิงก์คลิปการสอน (ไม่บังคับ)</label>
     <input type="url" data-k="clip" placeholder="https://youtu.be/…"/>
+    <div class="row"><button class="btn ai" data-act="findClips">🔎 ให้ AI หาคลิปที่เกี่ยวข้อง</button><a id="ytSearch" class="hint" href="#" target="_blank" rel="noopener" hidden>ค้นเองใน YouTube</a></div>
   </div>
 
   <div class="card">
@@ -234,6 +237,21 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-l);border-co
   </div>
 </section>
 
+<!-- ================= แท็บ: คลังเนื้อหา ================= -->
+<section id="tab-bank" hidden>
+  <div class="card">
+    <h2>คลังเนื้อหา <span id="bankCount" class="badge"></span></h2>
+    <div class="hint">AI สรุปบันทึกการสอนจาก teachinglog เป็นเนื้อหาแบบเล่าเรื่อง เก็บไว้ให้สุ่มใช้ — ใช้ AI เฉพาะตอนกดซิงก์ ตอนสุ่มไม่ใช้ AI</div>
+    <div class="row"><button class="btn ai" data-act="syncBank">⟳ ซิงก์บันทึกใหม่จาก teachinglog</button><button class="mini danger" data-act="resetBank">เริ่มซิงก์ใหม่ทั้งหมด</button></div>
+    <div id="bankLast" class="hint"></div>
+    <div class="g2" style="margin-top:8px">
+      <select id="bankLevel"><option value="">ทุกชั้น</option><option>ม.1</option><option>ม.2</option><option>ม.3</option><option>ม.4</option><option>ม.5</option><option>ม.6</option></select>
+      <input type="text" id="bankSearch" placeholder="ค้นหาหัวข้อ/เนื้อหา"/>
+    </div>
+    <div id="bankList"></div>
+  </div>
+</section>
+
 <!-- ================= แท็บ: ตั้งค่า ================= -->
 <section id="tab-settings" hidden>
   <div class="card">
@@ -245,6 +263,13 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-l);border-co
     <datalist id="modelList"></datalist>
     <div class="row"><button class="btn alt" data-act="loadModels">ทดสอบ key + โหลดรายชื่อโมเดล</button></div>
     <div class="hint">key ขอฟรีได้ที่ aistudio.google.com · เก็บใน Script Properties ฝั่งเซิร์ฟเวอร์ ไม่ออกมาที่หน้าเว็บ</div>
+  </div>
+
+  <div class="card">
+    <h2>คลังเนื้อหา (ดึงจาก teachinglog)</h2>
+    <label class="f">ลิงก์หรือรหัสชีต “ระบบบันทึก krunonteachinglog”</label>
+    <input type="text" id="sTl" placeholder="https://docs.google.com/spreadsheets/d/…/edit" autocomplete="off"/>
+    <div class="hint">ระบบอ่านแท็บ Notes ของชีตนี้ (ต้องเป็นชีตที่บัญชีเดียวกับ Apps Script เข้าถึงได้) แล้วกด “บันทึกการตั้งค่า”</div>
   </div>
 
   <div class="card">
@@ -386,7 +411,7 @@ function ask(title,msg,okLabel,cls){return new Promise(function(res){modal(title
 
 /* ======================= ชั้นข้อมูล (GAS / Demo) ======================= */
 var MODE='gas';
-var S={tt:[],assigns:[],cfg:{hasKey:false,model:'',teacher:'ครูนนท์',master:'',logo:'',favicon:''},folders:null,ssUrl:''};
+var S={tt:[],assigns:[],bank:[],cfg:{hasKey:false,model:'',teacher:'ครูนนท์',master:'',logo:'',favicon:'',tlSheetId:'',tlLast:''},folders:null,ssUrl:''};
 
 function fetchT(url,ms){var ac=new AbortController(),t=setTimeout(function(){ac.abort()},ms);return fetch(url,{signal:ac.signal}).finally(function(){clearTimeout(t)})}
 /* หน้าเว็บอยู่นอก GAS: POST แบบ no-cors {key,fn,args} แล้ว poll GET ?key= จนได้ผล */
@@ -413,6 +438,8 @@ async function gasCall(fn){
 function api(fn,obj){return gasCall(fn,pinGet(),JSON.stringify(obj||{}))}
 
 var Demo={
+  bank:[{id:'b1',level:'ม.3',code:'ท23102',subject:'ภาษาไทย 6',topic:'โวหารภาพพจน์',story:'โวหารภาพพจน์คือการใช้ถ้อยคำให้เกิดภาพในใจ เช่น อุปมา อุปลักษณ์ บุคลวัต อติพจน์ (ข้อความตัวอย่างโหมดทดลอง)',dates:'2026-10-28',created:'2026-10-29 10:00',used:0,lastUsed:''},{id:'b2',level:'ม.4',code:'ท31102',subject:'ภาษาไทย 2',topic:'การสร้างคำ',story:'การสร้างคำในภาษาไทยมีหลายวิธี ได้แก่ คำประสม คำซ้ำ คำซ้อน และคำสมาส (ข้อความตัวอย่างโหมดทดลอง)',dates:'2026-10-28',created:'2026-10-29 10:00',used:0,lastUsed:''}],
+  bankMeta:function(){return Demo.bank.slice().reverse().map(function(b){var o=Object.assign({},b);o.len=o.story.length;o.snip=o.story.slice(0,140);delete o.story;return o})},
   tt:null,
   getTT:function(){if(!Demo.tt)Demo.tt=Demo.seed();return Demo.tt},
   seed:function(){
@@ -428,9 +455,16 @@ var Demo={
     await sleep(450);
     var p=a[1]?JSON.parse(a[1]):{};
     switch(fn){
-      case 'apiBoot':return {tt:Demo.getTT(),assigns:[],cfg:S.cfg,folders:null,ssUrl:''};
+      case 'apiBoot':return {tt:Demo.getTT(),assigns:[],bank:Demo.bankMeta(),cfg:S.cfg,folders:null,ssUrl:''};
       case 'apiImportTimetable':{var keep=Demo.getTT().filter(function(x){return x.term!==p.term});p.rows.forEach(function(r){keep.push({day:r.day,period:r.period,time:r.time||PERIODS[r.period]||'',level:r.level,code:r.code,subject:r.subject,term:p.term,start:p.start})});Demo.tt=keep;return {tt:keep}}
       case 'apiDeleteTerm':Demo.tt=Demo.getTT().filter(function(x){return x.term!==p.term});return {tt:Demo.tt};
+      case 'apiFindClips':return {clips:[{id:'dQw4w9WgXcQ',url:'https://www.youtube.com/watch?v=dQw4w9WgXcQ',title:'(ตัวอย่าง) สอนเรื่อง '+(p.topic||''),channel:'ช่องตัวอย่าง',thumb:''},{id:'aaaaaaaaaaa',url:'https://www.youtube.com/watch?v=aaaaaaaaaaa',title:'(ตัวอย่าง) สรุปเรื่อง '+(p.topic||'')+' ใน 10 นาที',channel:'ครูนนท์ Channel',thumb:''}],searchUrl:'https://www.youtube.com/results?search_query='+encodeURIComponent(p.topic||''),note:''};
+      case 'apiSyncBank':{if(!Demo.bank.some(function(b){return b.id==='b3'}))Demo.bank.push({id:'b3',level:'ม.2',code:'ท22102',subject:'ภาษาไทย 4',topic:'สาเหตุการยืมคำ',story:'ภาษาไทยยืมคำจากภาษาอื่นเพราะการติดต่อค้าขาย ศาสนา และวัฒนธรรม (ข้อความตัวอย่างโหมดทดลอง)',dates:'2026-10-29',created:'2026-10-29 10:30',used:0,lastUsed:''});return {ok:true,added:1,processed:3,remaining:0,total:Demo.bank.length,last:'2026-10-29 10:30'}}
+      case 'apiBankList':return {bank:Demo.bankMeta()};
+      case 'apiBankGet':return {item:Demo.bank.filter(function(b){return b.id===p.id})[0]};
+      case 'apiRandomBank':{var pool=Demo.bank.filter(function(b){return !p.level||b.level===p.level});if(!pool.length)throw new Error('คลังยังไม่มีเนื้อหา'+(p.level?'ของ '+p.level:''));var pk=pool[Math.floor(Math.random()*pool.length)];return {item:pk,count:pool.length}}
+      case 'apiMarkBankUsed':Demo.bank.forEach(function(b){if(b.id===p.id)b.used++});return {ok:true};
+      case 'apiDeleteBank':Demo.bank=Demo.bank.filter(function(b){return b.id!==p.id});return {ok:true,bank:Demo.bankMeta()};
       case 'apiPrepare':return Demo.folders();
       case 'apiSaveSettings':return {ok:true};
       case 'apiListModels':return {models:['gemini-flash-latest','gemini-flash-lite-latest','gemini-pro-latest']};
@@ -447,7 +481,7 @@ var Demo={
 
 /* ======================= สถานะงานปัจจุบัน ======================= */
 var REC_KEYS=['id','created','date','period','time','level','code','subject','topic','indicators','type','clip','knowledge','formUrl','formEdit','task','submit','note','message'];
-function newCur(){return {id:'',created:'',date:todayISO(),period:'',time:'',level:'',code:'',subject:'',topic:'',indicators:'',ref:'',type:'form',clip:'',knowledge:'',quiz:null,formUrl:'',formEdit:'',task:'',submit:DEF_SUBMIT.form,note:'',message:''}}
+function newCur(){return {id:'',created:'',date:todayISO(),period:'',time:'',level:'',code:'',subject:'',topic:'',indicators:'',ref:'',bankId:'',type:'form',clip:'',knowledge:'',quiz:null,formUrl:'',formEdit:'',task:'',submit:DEF_SUBMIT.form,note:'',message:''}}
 var cur=newCur(), chipList=[];
 
 function need(keys){var miss=keys.filter(function(k){return !String(cur[k]||'').trim()}).map(function(k){return LBL[k]});if(miss.length)throw new Error('กรอก '+miss.join(', ')+' ก่อน')}
@@ -523,7 +557,7 @@ function renderMsg(){
   if(cur.message){w.hidden=false;$('#msgBox').value=cur.message}else{w.hidden=true;$('#msgBox').value=''}
   $('#saveNote').textContent=cur.id?'บันทึกในชีตแล้ว':'';
 }
-function refreshAll(){syncInputs();renderChips();renderQuiz();renderFormRes();setType(cur.type||'form');renderMsg()}
+function refreshAll(){syncInputs();renderChips();renderQuiz();renderFormRes();setType(cur.type||'form');renderMsg();updYt()}
 
 function renderHistory(){
   var q=($('#histSearch').value||'').trim().toLowerCase();
@@ -541,7 +575,7 @@ function renderSettings(){
   $('#keyState').textContent=S.cfg.hasKey?'บันทึกแล้ว ✓':'ยังไม่ได้ตั้ง';
   $('#sModel').value=S.cfg.model||'';$('#sTeacher').value=S.cfg.teacher||'';
   $('#sMaster').value=S.cfg.master||DEFAULT_MASTER;
-  $('#sKey').value='';$('#sPin').value='';$('#sLogo').value=S.cfg.logo||DEFAULT_LOGO;$('#sFavicon').value=S.cfg.favicon||'';previewImgs();
+  $('#sKey').value='';$('#sPin').value='';$('#sLogo').value=S.cfg.logo||DEFAULT_LOGO;$('#sTl').value=S.cfg.tlSheetId||'';$('#sFavicon').value=S.cfg.favicon||'';previewImgs();
   renderFolders();
   var a=$('#ssLink');if(S.ssUrl){a.href=S.ssUrl;a.textContent='· เปิดชีต';a.hidden=false}else a.hidden=true;
   renderTT();
@@ -574,7 +608,7 @@ function loadRecord(r){
 function tab(t){
   $$('[id^=tab-]').forEach(function(s){s.hidden=s.id!=='tab-'+t});
   $$('.tab').forEach(function(b){b.classList.toggle('on',b.dataset.t===t)});
-  if(t==='history')renderHistory();if(t==='settings')renderSettings();
+  if(t==='history')renderHistory();if(t==='bank')renderBank();if(t==='settings')renderSettings();
 }
 
 var ACT={
@@ -636,7 +670,7 @@ var ACT={
       if(cur.type==='text'&&!String(cur.task).trim()&&!(await ask('ยังไม่มีโจทย์','ยังไม่ได้ใส่โจทย์ภาระงาน ต้องการออกข้อความต่อหรือไม่','ออกข้อความ')))return;
       cur.message=buildMessage(cur);renderMsg();
       busy('กำลังบันทึกลงชีต…');
-      await saveCur();renderMsg();
+      await saveCur();renderMsg();markBank();
       toast('บันทึกลงชีตแล้ว — กดคัดลอกข้อความได้เลย');
       $('#msgWrap').scrollIntoView({behavior:'smooth',block:'center'});
     }catch(e){toast(e.message,true)}finally{unbusy()}
@@ -666,13 +700,44 @@ var ACT={
     try{
       var m=$('#sMaster').value,body={model:$('#sModel').value.trim(),teacher:$('#sTeacher').value.trim(),master:m.trim()===DEFAULT_MASTER.trim()?'':m};
       if($('#sKey').value.trim())body.geminiKey=$('#sKey').value.trim();
-      var np=$('#sPin').value.trim();if(np)body.newPin=np;body.logo=$('#sLogo').value.trim();body.favicon=$('#sFavicon').value.trim();
+      var np=$('#sPin').value.trim();if(np)body.newPin=np;body.logo=$('#sLogo').value.trim();body.favicon=$('#sFavicon').value.trim();body.tlSheetId=$('#sTl').value.trim().replace(/^.*\/d\/([\w-]+).*$/,'$1');
       busy('กำลังบันทึก…');
       await api('apiSaveSettings',body);
-      S.cfg.model=body.model;S.cfg.teacher=body.teacher;S.cfg.master=body.master;S.cfg.logo=body.logo;S.cfg.favicon=body.favicon;if(body.geminiKey)S.cfg.hasKey=true;
+      S.cfg.model=body.model;S.cfg.teacher=body.teacher;S.cfg.master=body.master;S.cfg.logo=body.logo;S.cfg.favicon=body.favicon;S.cfg.tlSheetId=body.tlSheetId;if(body.geminiKey)S.cfg.hasKey=true;
       if(np)pinSet(np);
       applyBrand();writeCache();renderSettings();toast('บันทึกการตั้งค่าแล้ว');
     }catch(e){toast(e.message,true)}finally{unbusy()}
+  },
+  findClips:async function(){
+    try{
+      need(['topic']);
+      busy('AI กำลังค้นหาคลิป… (ราว 15–40 วินาที)');
+      var r=await api('apiFindClips',{topic:cur.topic,level:cur.level,subject:cur.subject,indicators:cur.indicators});
+      unbusy();openClips(r);
+    }catch(e){unbusy();toast(e.message,true)}
+  },
+  useClip:function(b){var c=clipList[+b.dataset.i];if(!c)return;cur.clip=c.url;syncInputs();$('#modalHost').innerHTML='';toast('ใส่ลิงก์คลิปแล้ว')},
+  randBank:async function(){
+    try{
+      busy('กำลังสุ่มจากคลัง…');
+      var r=await api('apiRandomBank',{level:cur.level,excludeId:cur.bankId});
+      useBank(r.item,true);
+      $('#bankNote').textContent='ได้: '+r.item.topic+' ('+r.item.level+') · คลังมี '+r.count+' เรื่อง — กดสุ่มได้อีก';
+    }catch(e){toast(e.message,true)}finally{unbusy()}
+  },
+  syncBank:function(){syncBank(false)},
+  resetBank:async function(){if(await ask('เริ่มซิงก์ใหม่ทั้งหมด?','ล้างคลังเนื้อหาเดิมทั้งหมด แล้วให้ AI สรุปบันทึกจาก teachinglog ใหม่ตั้งแต่ต้น (ใช้ AI หลายครั้ง)','ล้างและซิงก์ใหม่','warn'))syncBank(true)},
+  bankView:async function(b){
+    try{
+      busy('กำลังโหลดเรื่อง…');var r=await api('apiBankGet',{id:b.dataset.id});unbusy();var it=r.item;
+      modal(it.topic,'<div class="hint">'+esc(it.level)+' · '+esc(it.code)+' '+esc(it.subject)+(it.dates?' · สอนเมื่อ '+esc(it.dates):'')+'</div><div style="white-space:pre-wrap;line-height:1.75;margin-top:8px">'+esc(it.story)+'</div>',
+        [{label:'ใช้ในงานใหม่',cls:'',fn:function(){useBank(it)}},{label:'📋 คัดลอก',keep:true,fn:async function(){toast(await copyText(it.story)?'คัดลอกแล้ว':'คัดลอกไม่สำเร็จ',false)}},{label:'ปิด'}]);
+    }catch(e){unbusy();toast(e.message,true)}
+  },
+  bankUse:async function(b){try{busy('กำลังโหลด…');var r=await api('apiBankGet',{id:b.dataset.id});unbusy();useBank(r.item)}catch(e){unbusy();toast(e.message,true)}},
+  bankDel:async function(b){
+    if(!(await ask('ลบออกจากคลัง?','ลบเรื่องนี้ออกจากคลังเนื้อหา (ไม่กระทบบันทึกใน teachinglog)','ลบ','warn')))return;
+    try{busy('กำลังลบ…');var r=await api('apiDeleteBank',{id:b.dataset.id});S.bank=r.bank;writeCache();renderBank();toast('ลบแล้ว')}catch(e){toast(e.message,true)}finally{unbusy()}
   },
   install:async function(){
     if(window.__bip){try{window.__bip.prompt();await window.__bip.userChoice}catch(e){}window.__bip=null;updInstallBtn();return}
@@ -691,7 +756,7 @@ var ACT={
       Object.assign(S,d);writeCache();$('#conn').hidden=true;$('#demoBar').hidden=true;start2();toast('เชื่อมต่อแล้ว');
     }catch(e){var ce=$('#cErr');ce.textContent=e.message;ce.hidden=false}finally{unbusy()}
   },
-  demo:function(){MODE='demo';$('#conn').hidden=true;$('#demoBar').hidden=false;S.tt=Demo.getTT();start2()},
+  demo:function(){MODE='demo';$('#conn').hidden=true;$('#demoBar').hidden=false;S.tt=Demo.getTT();S.bank=Demo.bankMeta();start2()},
   reconnect:function(){showConnect()},
   logout:function(){lsDel(CONN_KEY);lsDel(CACHE_KEY);location.reload()},
   impTT:function(){openImport('','','')},
@@ -947,6 +1012,58 @@ async function doImport(close){
   catch(e){toast(e.message,true);openImport(text,term,start)}finally{unbusy()}
 }
 
+/* ======================= ค้นหาคลิป / คลังเนื้อหา ======================= */
+var clipList=[];
+function updYt(){
+  var a=$('#ytSearch');if(!a)return;
+  var q=[cur.topic,'ภาษาไทย',cur.level,'สอน'].filter(Boolean).join(' ');
+  a.href='https://www.youtube.com/results?search_query='+encodeURIComponent(q);a.hidden=!cur.topic;
+}
+function openClips(r){
+  clipList=r.clips||[];
+  var body=clipList.length?clipList.map(function(c,i){
+    return '<div class="hcard"><div class="pv">'+(c.thumb?'<img src="'+esc(c.thumb)+'" alt="" style="width:96px;height:54px"/>':'')+'<div><b>'+esc(c.title)+'</b><div class="hint">'+esc(c.channel)+' · <a href="'+esc(c.url)+'" target="_blank" rel="noopener">เปิดดู</a></div></div></div><div class="row"><button class="mini" data-act="useClip" data-i="'+i+'">ใช้คลิปนี้</button></div></div>';
+  }).join(''):'<div class="warn-l">ไม่พบคลิปที่ตรวจแล้วว่าเปิดได้'+(r.note?' ('+esc(r.note)+')':'')+'</div>';
+  body+='<div class="hint" style="margin-top:8px">ทุกลิงก์ผ่านการตรวจว่ามีคลิปอยู่จริง แต่ควรกดดูเนื้อหาก่อนใช้ · <a href="'+esc(r.searchUrl)+'" target="_blank" rel="noopener">ค้นต่อใน YouTube</a></div>';
+  modal('คลิปที่ AI หาให้',body);
+}
+function useBank(it,stay){
+  cur.topic=it.topic;cur.ref=it.story||'';cur.bankId=it.id;
+  if(!cur.level){cur.level=it.level;cur.code=it.code||'';cur.subject=it.subject||''}
+  if(!stay)tab('assign');
+  syncInputs();renderChips();updYt();
+  toast('ใส่เนื้อหา “'+it.topic+'” แล้ว');
+}
+function markBank(){
+  if(!cur.bankId)return;var id=cur.bankId;
+  api('apiMarkBankUsed',{id:id}).then(function(){S.bank.forEach(function(b){if(b.id===id)b.used=(b.used||0)+1});writeCache()}).catch(function(){});
+}
+function renderBank(){
+  var lv=$('#bankLevel').value,q=($('#bankSearch').value||'').trim().toLowerCase();
+  var list=S.bank.filter(function(b){return (!lv||b.level===lv)&&(!q||(b.topic+' '+(b.snip||'')).toLowerCase().indexOf(q)>=0)});
+  $('#bankCount').textContent=S.bank.length+' เรื่อง';
+  $('#bankLast').textContent=S.cfg.tlLast?'ซิงก์ล่าสุด '+S.cfg.tlLast:'ยังไม่เคยซิงก์';
+  $('#bankList').innerHTML=list.length?list.map(function(b){
+    return '<div class="hcard"><h3>'+esc(b.topic)+'</h3><div class="meta">'+esc(b.level)+' · '+esc(b.code)+' '+esc(b.subject)+' · ใช้แล้ว '+(b.used||0)+' ครั้ง</div>'+
+      '<div class="hint" style="margin-top:4px">'+esc(b.snip||'')+'…</div>'+
+      '<div class="row"><button class="mini" data-act="bankView" data-id="'+esc(b.id)+'">อ่านเรื่อง</button><button class="mini" data-act="bankUse" data-id="'+esc(b.id)+'">ใช้ในงานใหม่</button><button class="mini danger" data-act="bankDel" data-id="'+esc(b.id)+'">ลบ</button></div></div>';
+  }).join(''):'<div class="empty" style="margin-top:10px">'+(S.bank.length?'ไม่พบรายการที่ค้นหา':'ยังไม่มีเนื้อหาในคลัง — ตั้งรหัสชีต teachinglog ที่แท็บ “ตั้งค่า” แล้วกด “ซิงก์บันทึกใหม่…”')+'</div>';
+}
+async function syncBank(reset){
+  try{
+    var added=0,first=true,r=null;
+    for(;;){
+      busy(first&&reset?'ล้างคลังและเริ่มซิงก์ใหม่…':'AI กำลังสรุปบันทึกใหม่… (เพิ่มแล้ว '+added+' เรื่อง)');
+      r=await api('apiSyncBank',{reset:!!(first&&reset)});first=false;added+=r.added;
+      if(r.remaining<=0)break;
+      $('#busyTxt').textContent='AI กำลังสรุปบันทึก… เหลืออีก '+r.remaining+' บันทึก (เพิ่มแล้ว '+added+' เรื่อง)';
+    }
+    var b=await api('apiBankList');S.bank=b.bank;if(r&&r.last)S.cfg.tlLast=r.last;
+    writeCache();renderBank();
+    toast(added?('เพิ่มในคลัง '+added+' เรื่อง'):'ไม่มีบันทึกใหม่ให้สรุป');
+  }catch(e){toast(e.message,true)}finally{unbusy()}
+}
+
 /* ======================= ผูกอีเวนต์ ======================= */
 document.addEventListener('click',function(e){
   var b=e.target.closest('[data-act]');
@@ -959,6 +1076,7 @@ document.addEventListener('input',function(e){
     if(d.k==='date')renderChips();
     if(d.k==='period'){cur.time=PERIODS[t.value]||'';syncInputs();renderChips()}
     if(d.k==='level')renderChips();
+    if(d.k==='topic'||d.k==='level')updYt();
     return;
   }
   if(d.q!=null){cur.quiz[+d.q].q=t.value;return}
@@ -967,6 +1085,7 @@ document.addEventListener('input',function(e){
     var opts=t.closest('.qcard').querySelectorAll('.opt');for(var k=0;k<opts.length;k++)opts[k].classList.toggle('ok',k===a[1]);return}
   if(t.id==='msgBox'){cur.message=t.value;return}
   if(t.id==='histSearch'){renderHistory();return}
+  if(t.id==='bankSearch'||t.id==='bankLevel'){renderBank();return}
   if(t.id==='sLogo'||t.id==='sFavicon'){previewImgs();return}
 });
 document.addEventListener('change',function(e){if(e.target.id==='upFile')uploadPdf(e.target.files[0]);if(e.target.id==='ttTerm')renderTT()});
@@ -978,7 +1097,7 @@ function showConnect(msg){
 }
 function start2(){refreshAll();renderHistory();renderSettings();applyBrand()}
 function readCache(){try{return JSON.parse(lsGet(CACHE_KEY)||'null')}catch(e){return null}}
-function writeCache(){if(MODE!=='gas')return;try{lsSet(CACHE_KEY,JSON.stringify({tt:S.tt,assigns:S.assigns.slice(0,120),cfg:S.cfg,folders:S.folders,ssUrl:S.ssUrl}))}catch(e){}}
+function writeCache(){if(MODE!=='gas')return;try{lsSet(CACHE_KEY,JSON.stringify({tt:S.tt,assigns:S.assigns.slice(0,120),bank:S.bank,cfg:S.cfg,folders:S.folders,ssUrl:S.ssUrl}))}catch(e){}}
 async function start(){
   applyBrand();
   if(!(gasUrl()&&pinGet())){showConnect();return}
