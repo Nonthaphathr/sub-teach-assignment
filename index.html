@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ระบบมอบหมายงานสอนแทน</title>
+<meta name="theme-color" content="#2f6f5e" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-title" content="งานสอนแทน" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<link rel="icon" href="data:," />
+<script>
+/* เก็บเหตุการณ์ติดตั้ง PWA ไว้ตั้งแต่ต้น + ลงทะเบียน service worker */
+window.__bip=null;
+window.addEventListener("beforeinstallprompt",function(e){ e.preventDefault(); window.__bip=e; window.dispatchEvent(new Event("bip-ready")); });
+if("serviceWorker" in navigator && location.protocol==="https:"){ window.addEventListener("load",function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); }); }
+</script>
+<script>
+/* error bar: แสดง error บนจอ */
+(function(){function show(m){var b=document.getElementById('errBar');if(!b){b=document.createElement('div');b.id='errBar';
+b.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:99999;background:#b91c1c;color:#fff;padding:10px;white-space:pre-wrap;font:14px sans-serif';
+b.onclick=function(){b.remove()};(document.body||document.documentElement).appendChild(b);}b.textContent+=m+'\n';}
+addEventListener('error',function(e){if(e.target&&e.target!==window)return;show(e.message+' (บรรทัด '+e.lineno+')');});
+addEventListener('unhandledrejection',function(e){show('Promise: '+((e.reason&&e.reason.message)||e.reason));});})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;600&family=Sarabun:wght@400;600&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#f6f3ec; --card:#ffffff; --ink:#1f2937; --mute:#6b7280; --line:#e5e1d8;
+  --pri:#2f6f5e; --pri-d:#25594c; --pri-l:#e3f1ec; --acc:#e8a33d; --acc-l:#fdf1d9;
+  --bad:#b91c1c; --bad-l:#fde8e8; --ok:#15803d; --r:14px; --sh:0 2px 10px rgba(31,41,55,.07);
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 'Sarabun',system-ui,sans-serif}
+h1,h2,h3,.btn,.tab,.badge,.mini{font-family:'Kanit','Sarabun',sans-serif}
+[hidden]{display:none!important}
+.wrap{max-width:900px;margin:0 auto;padding:14px 14px 90px}
+header.top{background:var(--pri);color:#fff;padding:14px 16px;position:sticky;top:0;z-index:20;box-shadow:var(--sh)}
+header.top .in{max-width:900px;margin:0 auto;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;flex:1;min-width:210px}
+.brand .logo{width:42px;height:42px;border-radius:10px;background:#fff;object-fit:contain;padding:3px}
+header.top h1{font-size:19px;margin:0;font-weight:600;line-height:1.25}
+.credit{font-size:12px;opacity:.85}
+.tabs{display:flex;gap:6px}
+.tab{border:0;background:rgba(255,255,255,.14);color:#fff;padding:7px 14px;border-radius:999px;cursor:pointer;font-size:15px}
+.tab.on{background:#fff;color:var(--pri-d);font-weight:600}
+.demo{background:var(--acc-l);color:#7a4b00;text-align:center;padding:6px 10px;font-size:14px}
+.card{background:var(--card);border-radius:var(--r);box-shadow:var(--sh);padding:16px;margin:14px 0}
+.card h2{margin:0 0 10px;font-size:18px;display:flex;align-items:center;gap:10px}
+.no{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--pri);color:#fff;font-size:15px}
+label.f{display:block;font-size:14px;color:var(--mute);margin:10px 0 3px}
+input[type=text],input[type=date],input[type=password],input[type=url],select,textarea{
+  width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:10px;font:inherit;background:#fff;color:var(--ink)}
+textarea{resize:vertical;min-height:70px}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-l);border-color:var(--pri)}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.g3{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:10px}
+@media(max-width:620px){.g2,.g3{grid-template-columns:1fr}}
+.btn{border:0;border-radius:10px;padding:9px 16px;font-size:15px;cursor:pointer;background:var(--pri);color:#fff;transition:transform .12s,opacity .12s}
+.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.alt{background:var(--pri-l);color:var(--pri-d)}
+.btn.ai{background:linear-gradient(135deg,#7c3aed,#2563eb)}
+.btn.warn{background:var(--acc);color:#3b2a00}
+.btn.big{padding:12px 22px;font-size:17px}
+.mini{border:1px solid var(--line);background:#fff;border-radius:8px;padding:3px 10px;font-size:13px;cursor:pointer;color:var(--ink)}
+.mini.danger{color:var(--bad);border-color:#f3c0c0}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:12px;padding:8px 12px;cursor:pointer;font-size:14px;text-align:left;line-height:1.35}
+.chip b{font-family:'Kanit',sans-serif;font-weight:600}
+.chip.on{border-color:var(--pri);background:var(--pri-l)}
+.chip .done{color:var(--ok);font-size:12px}
+.empty{color:var(--mute);background:#faf8f3;border:1px dashed var(--line);border-radius:10px;padding:12px;font-size:14px}
+.hint{font-size:13px;color:var(--mute);margin-top:4px}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+.seg button{border:0;background:#fff;padding:9px 16px;font:15px 'Kanit',sans-serif;cursor:pointer;color:var(--mute)}
+.seg button.on{background:var(--pri);color:#fff}
+.qcard{border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:10px;background:#fffdf8}
+.qhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.opt{display:flex;align-items:center;gap:8px;margin-top:6px;padding:4px 8px;border-radius:10px;border:1px solid transparent}
+.opt.ok{background:var(--pri-l);border-color:#b7dccf}
+.opt .lt{font-family:'Kanit';width:20px;text-align:center;color:var(--mute)}
+.opt input[type=text]{padding:6px 9px}
+.exp{font-size:13px;color:var(--mute);margin-top:6px}
+.res{background:var(--pri-l);border:1px solid #b7dccf;border-radius:12px;padding:10px 12px;margin-top:10px;word-break:break-all;font-size:14px}
+.res a{color:var(--pri-d)}
+.msg{width:100%;min-height:260px;font:15px/1.65 'Sarabun',sans-serif;background:#fffdf8}
+.badge{display:inline-block;background:var(--acc-l);color:#7a4b00;border-radius:999px;padding:1px 9px;font-size:12px;margin-right:4px}
+.hcard{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px;background:#fff}
+.hcard h3{margin:0;font-size:16px}
+.hcard .meta{font-size:13px;color:var(--mute)}
+.tt{width:100%;border-collapse:collapse;font-size:14px}
+.tt td,.tt th{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left}
+.overlay{position:fixed;inset:0;background:rgba(15,23,42,.45);display:grid;place-items:center;z-index:50;padding:14px}
+.modal{background:#fff;border-radius:16px;max-width:720px;width:100%;max-height:88vh;overflow:auto;padding:18px;animation:pop .18s ease-out}
+.modal h3{margin:0 0 8px;font-size:18px}
+.modal textarea{min-height:300px;font-size:14px}
+@keyframes pop{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}
+.spin{width:44px;height:44px;border-radius:50%;border:5px solid #fff;border-top-color:var(--acc);animation:rot .8s linear infinite;margin:0 auto 12px}
+@keyframes rot{to{transform:rotate(360deg)}}
+.busybox{color:#fff;text-align:center;font-family:'Kanit',sans-serif;font-size:17px}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:80;display:flex;flex-direction:column;gap:8px;align-items:center;width:min(92vw,520px)}
+.t{background:#111827;color:#fff;border-radius:12px;padding:10px 16px;font-size:15px;box-shadow:var(--sh);animation:pop .18s ease-out;width:100%}
+.t.err{background:var(--bad)}
+.bar{height:6px;background:var(--line);border-radius:6px;overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;width:0;background:var(--pri);transition:width .25s}
+.foot{text-align:center;color:var(--mute);font-size:13px;padding:6px 12px 26px}
+.inst{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-top:8px}
+.inst.on{border-color:var(--pri);background:var(--pri-l)}
+.pv{display:flex;gap:10px;align-items:center;margin-top:6px}
+.pv img{width:48px;height:48px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:#fff}
+.ptab{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px}
+.ptab td,.ptab th{border-bottom:1px solid var(--line);padding:3px 6px;text-align:left}
+.warn-l{color:#7a4b00;background:var(--acc-l);border-radius:8px;padding:6px 10px;font-size:13px;margin-top:6px}
+@media(max-width:420px){.itxt{display:none}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div id="demoBar" class="demo" hidden>โหมดทดลอง — ยังไม่เชื่อมชีต / Gemini / Drive (ข้อมูลหายเมื่อรีเฟรช) · ตั้งค่าการเชื่อมต่อที่แท็บ “ตั้งค่า” เพื่อใช้งานจริง</div>
+<header class="top"><div class="in">
+  <div class="brand"><img id="brandLogo" class="logo" alt="" hidden/><div><h1 id="brandName">ระบบมอบหมายงานสอนแทน</h1><div class="credit">พัฒนาโดย ครูนนทพัทธ์ หิรัญเรือง</div></div></div>
+  <div class="tabs">
+    <button class="tab on" data-act="tab" data-t="assign">มอบหมายงาน</button>
+    <button class="tab" data-act="tab" data-t="history">ประวัติ</button>
+    <button class="tab" data-act="tab" data-t="settings">ตั้งค่า</button>
+    <button class="tab" id="btnInstall" data-act="install" hidden>⬇<span class="itxt"> ติดตั้งแอป</span></button>
+  </div>
+</div></header>
+
+<main class="wrap">
+
+<!-- ================= แท็บ: มอบหมายงาน ================= -->
+<section id="tab-assign">
+
+  <div class="card">
+    <h2><span class="no">1</span>เลือกวันและคาบที่ไม่อยู่</h2>
+    <div class="g3">
+      <div><label class="f">วันที่</label><input type="date" data-k="date"/></div>
+      <div><label class="f">ชั้น</label>
+        <select data-k="level"><option value="">— เลือก —</option><option>ม.1</option><option>ม.2</option><option>ม.3</option><option>ม.4</option><option>ม.5</option><option>ม.6</option></select></div>
+      <div><label class="f">คาบ</label>
+        <select data-k="period"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></div>
+    </div>
+    <div class="g3">
+      <div><label class="f">วิชา</label><input type="text" data-k="subject" placeholder="เช่น ภาษาไทย 6"/></div>
+      <div><label class="f">รหัสวิชา</label><input type="text" data-k="code" placeholder="เช่น ท23102"/></div>
+      <div><label class="f">เวลา</label><input type="text" data-k="time" placeholder="เติมให้อัตโนมัติ"/></div>
+    </div>
+    <label class="f">คาบสอนตามตาราง · <span id="dayLabel"></span></label>
+    <div id="chips" class="chips"></div>
+  </div>
+
+  <div class="card">
+    <h2><span class="no">2</span>เนื้อหาที่จะให้เรียน</h2>
+    <label class="f">เรื่อง / หัวข้อ *</label>
+    <input type="text" data-k="topic" placeholder="เช่น การเขียนเรียงความ, คำราชาศัพท์, กาพย์ยานี 11"/>
+    <label class="f">ตัวชี้วัด / จุดประสงค์ (ไม่บังคับ)</label>
+    <textarea data-k="indicators" rows="2" placeholder="ถ้าเว้นว่าง AI จะออกตามสาระของเรื่องนี้"></textarea>
+    <label class="f">เนื้อหา/ข้อมูลเพิ่มเติม (ไม่บังคับ) — ใช้ทั้งใน prompt ใบความรู้ และเป็นแหล่งออกข้อสอบ</label>
+    <textarea data-k="ref" rows="3" placeholder="วางเนื้อหาที่อยากให้ AI อิงเป็นหลัก"></textarea>
+    <label class="f">ลิงก์คลิปการสอน (ไม่บังคับ)</label>
+    <input type="url" data-k="clip" placeholder="https://youtu.be/…"/>
+  </div>
+
+  <div class="card">
+    <h2><span class="no">3</span>ใบความรู้ (PDF)</h2>
+    <div class="row" style="margin-top:0">
+      <button class="btn warn" data-act="prompt">🎨 สร้าง master prompt ใบความรู้</button>
+      <label class="btn alt" style="margin:0">⬆ อัปโหลด PDF เอง<input id="upFile" type="file" accept="application/pdf" hidden/></label>
+    </div>
+    <div class="hint">กดสร้าง prompt → คัดลอกไปวางในแชตกับ Claude → ได้ลิงก์ PDF บน Drive → วางลิงก์ในช่องนี้</div>
+    <div id="upProg" class="bar" hidden><i id="upBar"></i></div>
+    <label class="f">ลิงก์ใบความรู้</label>
+    <input type="url" data-k="knowledge" placeholder="https://drive.google.com/file/d/…"/>
+  </div>
+
+  <div class="card">
+    <h2><span class="no">4</span>ภาระงาน</h2>
+    <div class="seg" id="typeSeg">
+      <button data-act="type" data-t="form" class="on">📝 Google Form (แบบทดสอบ)</button>
+      <button data-act="type" data-t="text">✏️ โจทย์ข้อความ</button>
+    </div>
+
+    <div id="pForm">
+      <div class="g2">
+        <div><label class="f">จำนวนข้อ</label><select id="qCount"><option>5</option><option selected>10</option><option>15</option><option>20</option></select></div>
+        <div><label class="f">ความยาก</label><select id="qDiff"><option>ง่าย</option><option selected>ปานกลาง</option><option>ผสม ง่าย-ยาก</option></select></div>
+      </div>
+      <div class="row"><button class="btn ai" data-act="genQuiz">✨ ให้ AI สร้างข้อสอบ</button></div>
+      <div id="quizBox"></div>
+      <div class="row">
+        <button class="btn" id="btnForm" data-act="mkForm" disabled>สร้าง Google Form</button>
+        <span class="hint">แก้ข้อความ/เลือกเฉลยได้ก่อนสร้าง · สร้างแล้วบันทึกคะแนนลงชีตให้อัตโนมัติ</span>
+      </div>
+      <div id="formRes" class="res" hidden></div>
+    </div>
+
+    <div id="pText" hidden>
+      <label class="f">โจทย์ภาระงาน</label>
+      <textarea data-k="task" rows="6" placeholder="1) …&#10;2) …"></textarea>
+      <div class="row"><button class="btn ai" data-act="genTask">✨ ให้ AI ร่างโจทย์</button></div>
+    </div>
+
+    <label class="f" style="margin-top:14px">วิธีส่งงาน</label>
+    <input type="text" data-k="submit"/>
+  </div>
+
+  <div class="card">
+    <h2><span class="no">5</span>ออกข้อความ</h2>
+    <label class="f">หมายเหตุถึงนักเรียน (ไม่บังคับ)</label>
+    <input type="text" data-k="note" placeholder="เช่น ให้หัวหน้าห้องช่วยดูแลความเรียบร้อย"/>
+    <div class="row"><button class="btn big" data-act="mkMsg">ออกข้อความ + บันทึกลงชีต</button>
+      <button class="btn alt" data-act="newJob">+ งานใหม่</button></div>
+    <div id="msgWrap" hidden>
+      <label class="f">ข้อความพร้อมคัดลอก (แก้ไขได้)</label>
+      <textarea id="msgBox" class="msg"></textarea>
+      <div class="row"><button class="btn" data-act="copyMsg">📋 คัดลอกข้อความ</button><span id="saveNote" class="hint"></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= แท็บ: ประวัติ ================= -->
+<section id="tab-history" hidden>
+  <div class="card">
+    <h2>ประวัติการมอบหมายงาน</h2>
+    <input type="text" id="histSearch" placeholder="ค้นหา: เรื่อง / ชั้น / วิชา"/>
+    <div id="histList"></div>
+  </div>
+</section>
+
+<!-- ================= แท็บ: ตั้งค่า ================= -->
+<section id="tab-settings" hidden>
+  <div class="card">
+    <h2>Gemini (ใช้สร้างข้อสอบ/โจทย์)</h2>
+    <label class="f">API key <span id="keyState" class="badge"></span></label>
+    <input type="password" id="sKey" placeholder="วาง key ใหม่เมื่อต้องการเปลี่ยน (เว้นว่าง = ใช้ของเดิม)" autocomplete="off"/>
+    <label class="f">โมเดล (เว้นว่าง = gemini-flash-latest)</label>
+    <input type="text" id="sModel" list="modelList" placeholder="gemini-flash-latest"/>
+    <datalist id="modelList"></datalist>
+    <div class="row"><button class="btn alt" data-act="loadModels">ทดสอบ key + โหลดรายชื่อโมเดล</button></div>
+    <div class="hint">key ขอฟรีได้ที่ aistudio.google.com · เก็บใน Script Properties ฝั่งเซิร์ฟเวอร์ ไม่ออกมาที่หน้าเว็บ</div>
+  </div>
+
+  <div class="card">
+    <h2>โลโก้และไอคอนระบบ</h2>
+    <label class="f">ลิงก์โลโก้ (ใช้ที่หัวเว็บ และเป็นไอคอนตอนติดตั้งแอป)</label>
+    <input type="url" id="sLogo" placeholder="https://nonthaphathr.github.io/uploadimg/logo.png"/>
+    <div class="pv"><img id="pvLogo" alt="" hidden/><span class="hint">แนะนำ PNG จัตุรัส ≥ 512px ฝากไว้ที่ repo uploadimg (GitHub Pages) เพื่อให้ระบบทำไอคอนจากโลโก้ได้</span></div>
+    <label class="f">ลิงก์ favicon (ไม่บังคับ — เว้นว่าง = ใช้โลโก้)</label>
+    <input type="url" id="sFavicon" placeholder="https://…/favicon.png"/>
+    <div class="pv"><img id="pvFav" alt="" hidden/></div>
+    <div class="hint">ไอคอนที่ติดตั้งไว้บนหน้าจอโฮมแล้วจะไม่เปลี่ยนตามโลโก้ใหม่ — ต้องลบแล้วติดตั้งใหม่</div>
+  </div>
+
+  <div class="card">
+    <h2>ทั่วไป</h2>
+    <label class="f">ชื่อที่ลงท้ายข้อความ</label>
+    <input type="text" id="sTeacher"/>
+    <label class="f">เปลี่ยน PIN (เว้นว่าง = ไม่เปลี่ยน)</label>
+    <input type="password" id="sPin" placeholder="PIN ใหม่ (≥ 4 ตัว)" autocomplete="off"/>
+    <div class="hint">PIN จำเป็นเสมอ เพราะหน้าเว็บอยู่บน GitHub Pages (เปิดสาธารณะ)</div>
+    <div class="row"><button class="btn alt" data-act="reconnect">เปลี่ยนลิงก์/PIN การเชื่อมต่อ</button><button class="btn alt" data-act="logout">ออกจากระบบเครื่องนี้</button></div>
+  </div>
+
+  <div class="card">
+    <h2>โฟลเดอร์ Drive</h2>
+    <div class="row" style="margin-top:0"><button class="btn alt" data-act="prepare">📁 เตรียม/ตรวจโฟลเดอร์</button></div>
+    <div id="folderBox" class="hint" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Master prompt ใบความรู้</h2>
+    <div class="hint">ตัวแปรที่ใช้ได้: {{ชั้น}} {{วิชา}} {{รหัสวิชา}} {{เรื่อง}} {{ตัวชี้วัด}} {{เนื้อหาเพิ่มเติม}} {{ลิงก์โฟลเดอร์}} {{ชื่อไฟล์}}</div>
+    <textarea id="sMaster" rows="16" style="margin-top:8px"></textarea>
+    <div class="row"><button class="btn alt" data-act="resetMaster">คืนค่าเริ่มต้น</button></div>
+  </div>
+
+  <div class="row" style="margin-top:0"><button class="btn big" data-act="saveSet">💾 บันทึกการตั้งค่า</button></div>
+
+  <div class="card">
+    <h2>ตารางสอนรายภาคเรียน <a id="ssLink" class="hint" href="#" target="_blank" rel="noopener"></a></h2>
+    <div class="hint">ระบบเลือกภาคเรียนให้ตามวันที่ (ใช้ภาคเรียนที่ “เริ่มใช้” ล่าสุดที่ไม่เกินวันที่นั้น) นำเข้าได้จากไฟล์ CSV / Excel หรือวางข้อมูล</div>
+    <div class="row"><button class="btn" data-act="impTT">⬆ นำเข้าตารางสอน</button><button class="btn alt" data-act="ttTpl">แม่แบบ / ส่งออก CSV</button></div>
+    <label class="f">ดูภาคเรียน</label>
+    <div class="row" style="margin-top:0"><select id="ttTerm" style="flex:1;min-width:180px"></select><button class="mini danger" data-act="delTerm">ลบภาคเรียนนี้</button></div>
+    <div id="ttBox" style="overflow:auto;margin-top:8px"></div>
+  </div>
+</section>
+</main>
+
+<footer class="foot">ระบบมอบหมายงานสอนแทน · พัฒนาโดย ครูนนทพัทธ์ หิรัญเรือง</footer>
+<div id="toast"></div>
+<div id="busy" class="overlay" hidden><div class="busybox"><div class="spin"></div><div id="busyTxt">กำลังทำงาน…</div></div></div>
+<div id="modalHost"></div>
+<div id="conn" class="overlay" hidden><div class="modal" style="max-width:480px">
+  <h3>🔌 เชื่อมต่อระบบ</h3>
+  <p class="hint">วางลิงก์ Web app ของ Apps Script (ลงท้าย /exec) และ PIN ที่ตั้งไว้ — เก็บไว้ในเครื่องนี้เท่านั้น</p>
+  <label class="f">ลิงก์ Web app (/exec)</label><input type="url" id="cUrl" placeholder="https://script.google.com/macros/s/…/exec"/>
+  <label class="f">PIN</label><input type="password" id="cPin" autocomplete="off"/>
+  <div id="cErr" class="warn-l" hidden></div>
+  <div class="row"><button class="btn" data-act="connect">เชื่อมต่อ</button><button class="btn alt" data-act="demo">ลองโหมดทดลอง</button></div>
+</div></div>
+
+<script>
+(function(){
+'use strict';
+
+/* ======================= ค่าคงที่ ======================= */
+var MONTHS=['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
+var DAYS=['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+var PERIODS={1:'08:40-09:30',2:'09:30-10:20',3:'10:20-11:10',4:'11:10-12:00',5:'13:00-13:50',6:'13:50-14:40',7:'14:40-15:30',8:'15:30-16:20'};
+var DEF_SUBMIT={form:'ทำผ่าน Google Form ให้เสร็จภายในคาบเรียน',text:'เขียนลงสมุดและส่งครูที่ดูแลคาบเมื่อหมดคาบ'};
+var LBL={level:'ชั้น',subject:'วิชา',topic:'เรื่อง'};
+
+var DEFAULT_MASTER = [
+'ช่วยสร้าง "ใบความรู้" วิชา{{วิชา}} ({{รหัสวิชา}}) ชั้น{{ชั้น}} เรื่อง "{{เรื่อง}}" เป็นไฟล์ PDF ขนาด A4 แนวตั้ง',
+'สำหรับให้นักเรียนอ่านเองเมื่อครูไม่อยู่ ใช้เวลาเรียนประมาณ 1 คาบ (50 นาที)',
+'',
+'ข้อมูลประกอบ',
+'- ตัวชี้วัด/จุดประสงค์: {{ตัวชี้วัด}}',
+'- รายละเอียดเพิ่มเติมจากครู: {{เนื้อหาเพิ่มเติม}}',
+'(ถ้าข้อมูลด้านบนไม่ระบุ ให้ดูจากหลักสูตรภาษาไทยในโปรเจกต์นี้)',
+'',
+'โครงสร้างเนื้อหา',
+'1. หัวเรื่อง + จุดประสงค์การเรียนรู้ 2-3 ข้อ',
+'2. สาระสำคัญ อธิบายด้วยภาษาง่าย แบ่งเป็นหัวข้อย่อยสั้น ๆ',
+'3. ตัวอย่างประกอบอย่างน้อย 3 ตัวอย่าง ใช้ตัวอย่างใกล้ตัวนักเรียนไทย',
+'4. กล่องจำง่าย / ตารางสรุป / แผนภาพสั้น ๆ',
+'5. กิจกรรมเช็กความเข้าใจ 3-5 ข้อ (ไม่ต้องใส่เฉลยในใบความรู้)',
+'',
+'รูปแบบ',
+'- สีสันสดใส เลือกสีหลัก 1 สี + สีเสริม 2 สี ใช้กล่อง แถบสี ไอคอน แบ่งหัวข้อ ให้อ่านง่ายเมื่อสั่งพิมพ์',
+'- ฟอนต์ไทยอ่านง่าย (TH Sarabun New หรือ Sarabun/Kanit) ตัวอักษรไม่เล็กกว่า 14pt',
+'- ไม่เกิน 2 หน้า ภาษาไทยถูกต้องตามหลักภาษา ห้ามแต่งข้อมูลขึ้นเอง',
+'- ท้ายใบมีช่อง ชื่อ-สกุล ชั้น เลขที่',
+'',
+'การส่งมอบ',
+'- ตั้งชื่อไฟล์: {{ชื่อไฟล์}}.pdf',
+'- อัปโหลดขึ้น Google Drive โฟลเดอร์นี้: {{ลิงก์โฟลเดอร์}}',
+'- ตั้งสิทธิ์ "ทุกคนที่มีลิงก์ดูได้"',
+'- ตอบกลับมาเฉพาะลิงก์ไฟล์ (บรรทัดเดียว) เพื่อให้ครูนำไปวางในระบบ'
+].join('\n');
+
+/* ======================= ตัวช่วย ======================= */
+var $=function(s){return document.querySelector(s)}, $$=function(s){return Array.prototype.slice.call(document.querySelectorAll(s))};
+var esc=function(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})};
+var sleep=function(ms){return new Promise(function(r){setTimeout(r,ms)})};
+function pad(n){return (n<10?'0':'')+n}
+function todayISO(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+function thaiDate(iso){if(!iso)return '';var p=iso.split('-');var d=new Date(+p[0],+p[1]-1,+p[2]);return 'วัน'+DAYS[d.getDay()]+'ที่ '+d.getDate()+' '+MONTHS[d.getMonth()]+' '+(d.getFullYear()+543)}
+function thaiShort(iso){if(!iso)return '';var p=iso.split('-');return (+p[2])+' '+MONTHS[+p[1]-1].slice(0,3)+'. '+(((+p[0])+543)%100)}
+var CONN_KEY='sa_conn_v1', CACHE_KEY='sa_boot_v1';
+var GAS_URL_CONST=''; /* ← ใส่ลิงก์ Web app (/exec) ตรงนี้ได้ ถ้าไม่อยากกรอกในหน้าเว็บ */
+function lsGet(k){try{return localStorage.getItem(k)||''}catch(e){return ''}}
+function lsSet(k,v){try{localStorage.setItem(k,v)}catch(e){}}
+function lsDel(k){try{localStorage.removeItem(k)}catch(e){}}
+function connGet(){try{return JSON.parse(lsGet(CONN_KEY)||'{}')}catch(e){return {}}}
+function gasUrl(){return GAS_URL_CONST||connGet().url||''}
+function pinGet(){return connGet().pin||''}
+function pinSet(v){var c=connGet();c.pin=v;lsSet(CONN_KEY,JSON.stringify(c))}
+async function copyText(t){
+  try{await navigator.clipboard.writeText(t);return true}catch(e){}
+  try{var ta=document.createElement('textarea');ta.value=t;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();var ok=document.execCommand('copy');ta.remove();return ok}catch(e){return false}
+}
+function toast(m,err){var t=document.createElement('div');t.className='t'+(err?' err':'');t.textContent=m;$('#toast').appendChild(t);setTimeout(function(){t.remove()},err?6000:2600)}
+function busy(m){$('#busyTxt').textContent=m||'กำลังทำงาน…';$('#busy').hidden=false}
+function unbusy(){$('#busy').hidden=true}
+function modal(title,html,actions){
+  var host=$('#modalHost');
+  host.innerHTML='<div class="overlay"><div class="modal"><h3>'+esc(title)+'</h3><div>'+html+'</div><div class="row" id="mAct"></div></div></div>';
+  var close=function(){host.innerHTML=''};
+  (actions||[{label:'ปิด'}]).forEach(function(a){
+    var b=document.createElement('button');b.className='btn '+(a.cls||'alt');b.textContent=a.label;
+    b.onclick=function(){if(a.fn)a.fn();if(!a.keep)close()};$('#mAct').appendChild(b);
+  });
+  host.firstChild.addEventListener('mousedown',function(e){if(e.target===host.firstChild)close()});
+  return close;
+}
+function ask(title,msg,okLabel,cls){return new Promise(function(res){modal(title,'<p>'+esc(msg)+'</p>',[{label:okLabel||'ตกลง',cls:cls||'',fn:function(){res(true)}},{label:'ยกเลิก',fn:function(){res(false)}}])})}
+
+/* ======================= ชั้นข้อมูล (GAS / Demo) ======================= */
+var MODE='gas';
+var S={tt:[],assigns:[],cfg:{hasKey:false,model:'',teacher:'ครูนนท์',master:'',logo:'',favicon:''},folders:null,ssUrl:''};
+
+function fetchT(url,ms){var ac=new AbortController(),t=setTimeout(function(){ac.abort()},ms);return fetch(url,{signal:ac.signal}).finally(function(){clearTimeout(t)})}
+/* หน้าเว็บอยู่นอก GAS: POST แบบ no-cors {key,fn,args} แล้ว poll GET ?key= จนได้ผล */
+async function gasCall(fn){
+  var args=Array.prototype.slice.call(arguments,1);
+  if(MODE==='demo')return Demo.call(fn,args);
+  var base=gasUrl();if(!base)throw new Error('ยังไม่ได้ตั้งค่าลิงก์ Web app');
+  var key='k'+Date.now().toString(36)+Math.random().toString(36).slice(2,10);
+  fetch(base,{method:'POST',mode:'no-cors',body:JSON.stringify({key:key,fn:fn,args:args})}).catch(function(){});
+  var t0=Date.now(),wait=600,fails=0;
+  while(Date.now()-t0<170000){
+    await sleep(wait);wait=Math.min(1400,wait+150);
+    var j=null;
+    try{var r=await fetchT(base+'?key='+encodeURIComponent(key),20000);j=await r.json();fails=0}
+    catch(e){if(++fails>=8)throw new Error('เชื่อมต่อ Apps Script ไม่ได้ — ตรวจอินเทอร์เน็ตและลิงก์ Web app');continue}
+    if(!j||j.status==='pending')continue;
+    if(j.status==='done')return j.result;
+    var m=String(j.error||'เกิดข้อผิดพลาด');
+    if(/PIN_INVALID|PIN_LOCKED/.test(m)){var pm=m.replace(/^PIN_\w+:\s*/,'');showConnect(pm);throw new Error(pm)}
+    throw new Error(m);
+  }
+  throw new Error('หมดเวลารอผลจาก Apps Script — ลองใหม่อีกครั้ง');
+}
+function api(fn,obj){return gasCall(fn,pinGet(),JSON.stringify(obj||{}))}
+
+var Demo={
+  tt:null,
+  getTT:function(){if(!Demo.tt)Demo.tt=Demo.seed();return Demo.tt},
+  seed:function(){
+    var rows=[[1,1,'ม.3','ท23102','ภาษาไทย 6'],[1,3,'ม.5','ท32102','ภาษาไทย 4'],[1,6,'ม.2','ท22102','ภาษาไทย 4'],[2,4,'ม.6','ท33102','ภาษาไทย 6'],[2,5,'ม.1','ท21102','ภาษาไทย 2'],[2,6,'ม.4','ท31102','ภาษาไทย 2'],[3,1,'ม.4','ท31102','ภาษาไทย 2'],[3,4,'ม.1','ท21102','ภาษาไทย 2'],[3,5,'ม.3','ท23102','ภาษาไทย 6'],[3,6,'ม.2','ท22102','ภาษาไทย 4'],[4,2,'ม.2','ท22102','ภาษาไทย 4'],[4,3,'ม.6','ท33102','ภาษาไทย 6'],[4,4,'ม.3','ท23102','ภาษาไทย 6'],[4,6,'ม.1','ท21102','ภาษาไทย 2'],[5,3,'ม.5','ท32102','ภาษาไทย 4']];
+    return rows.map(function(r){return {day:r[0],period:r[1],time:PERIODS[r[1]],level:r[2],code:r[3],subject:r[4],term:'2/2569',start:'2026-10-19'}});
+  },
+  folders:function(){
+    var f={root:{id:'demo',url:'https://drive.google.com/drive/folders/demo'},kn:{},quiz:{id:'demoq',url:'https://drive.google.com/drive/folders/demoq'}};
+    ['ม.1','ม.2','ม.3','ม.4','ม.5','ม.6'].forEach(function(l,i){f.kn[l]={id:'k'+i,url:'https://drive.google.com/drive/folders/demo-'+(i+1)}});
+    return f;
+  },
+  call:async function(fn,a){
+    await sleep(450);
+    var p=a[1]?JSON.parse(a[1]):{};
+    switch(fn){
+      case 'apiBoot':return {tt:Demo.getTT(),assigns:[],cfg:S.cfg,folders:null,ssUrl:''};
+      case 'apiImportTimetable':{var keep=Demo.getTT().filter(function(x){return x.term!==p.term});p.rows.forEach(function(r){keep.push({day:r.day,period:r.period,time:r.time||PERIODS[r.period]||'',level:r.level,code:r.code,subject:r.subject,term:p.term,start:p.start})});Demo.tt=keep;return {tt:keep}}
+      case 'apiDeleteTerm':Demo.tt=Demo.getTT().filter(function(x){return x.term!==p.term});return {tt:Demo.tt};
+      case 'apiPrepare':return Demo.folders();
+      case 'apiSaveSettings':return {ok:true};
+      case 'apiListModels':return {models:['gemini-flash-latest','gemini-flash-lite-latest','gemini-pro-latest']};
+      case 'apiGenQuiz':{var n=+p.count||10;var qs=[];for(var i=0;i<n;i++)qs.push({q:'(ตัวอย่างโหมดทดลอง) ข้อ '+(i+1)+' เกี่ยวกับ '+p.topic,choices:['ตัวเลือกที่ 1','ตัวเลือกที่ 2','ตัวเลือกที่ 3','ตัวเลือกที่ 4'],answer:i%4,explain:'เฉลยตัวอย่าง ข้อ '+(i+1)});return {questions:qs}}
+      case 'apiGenTask':return {task:'1) (ตัวอย่าง) อ่านใบความรู้เรื่อง '+p.topic+'\n2) สรุปสาระสำคัญเป็นแผนผังความคิดลงสมุด\n3) แต่งประโยคตัวอย่าง 5 ประโยค'};
+      case 'apiCreateForm':return {ok:true,formUrl:'https://docs.google.com/forms/d/e/DEMO-FORM-ID/viewform',formEdit:'https://docs.google.com/forms/d/DEMO-FORM-ID/edit',scoreSheet:'',warn:''};
+      case 'apiSaveAssignment':return {ok:true,id:p.id||('A'+Date.now()),created:p.created||(todayISO()+' 09:00')};
+      case 'apiDeleteAssignment':return {ok:true};
+      case 'apiUpload':return {ok:true,url:'https://drive.google.com/file/d/DEMO-PDF/view?usp=sharing'};
+    }
+    throw new Error('demo: ไม่รู้จัก '+fn);
+  }
+};
+
+/* ======================= สถานะงานปัจจุบัน ======================= */
+var REC_KEYS=['id','created','date','period','time','level','code','subject','topic','indicators','type','clip','knowledge','formUrl','formEdit','task','submit','note','message'];
+function newCur(){return {id:'',created:'',date:todayISO(),period:'',time:'',level:'',code:'',subject:'',topic:'',indicators:'',ref:'',type:'form',clip:'',knowledge:'',quiz:null,formUrl:'',formEdit:'',task:'',submit:DEF_SUBMIT.form,note:'',message:''}}
+var cur=newCur(), chipList=[];
+
+function need(keys){var miss=keys.filter(function(k){return !String(cur[k]||'').trim()}).map(function(k){return LBL[k]});if(miss.length)throw new Error('กรอก '+miss.join(', ')+' ก่อน')}
+function fileName(){var base=[cur.level,cur.code||cur.subject,cur.topic,cur.date].filter(Boolean).join('_');return base.replace(/[\\\/:*?"<>|\s]+/g,'-').slice(0,80)}
+
+/* ======================= ข้อความ ======================= */
+function buildMessage(r){
+  var L=[],n=0;
+  L.push('📚 ภาระงานวิชา'+(r.subject||'')+(r.code?' ('+r.code+')':'')+' ชั้น'+(r.level||''));
+  L.push('📅 '+thaiDate(r.date)+(r.period?' คาบที่ '+r.period:'')+(r.time?' ('+r.time+' น.)':''));
+  L.push('📖 เรื่อง: '+r.topic);
+  L.push('');L.push('✅ สิ่งที่ต้องทำ');
+  function step(t){n++;L.push(n+'. '+t)}
+  if(r.clip)step('ดูคลิปการเรียนรู้\n   '+r.clip);
+  if(r.knowledge)step('อ่านใบความรู้\n   '+r.knowledge);
+  if(r.type==='form'){
+    if(r.formUrl)step('ทำแบบทดสอบ'+(r.quiz&&r.quiz.length?' '+r.quiz.length+' ข้อ':'')+' ผ่าน Google Form (กรอกชื่อ-นามสกุล ชั้น เลขที่ให้ครบ)\n   '+r.formUrl);
+  }else if(r.task){
+    step('ทำภาระงาน\n'+String(r.task).split('\n').map(function(x){return '   '+x}).join('\n'));
+  }
+  if(!n)L.push('(ยังไม่ได้ระบุภาระงาน)');
+  if(r.submit){L.push('');L.push('📮 การส่งงาน: '+r.submit)}
+  if(r.note)L.push('📝 หมายเหตุ: '+r.note);
+  L.push('');L.push('— '+(S.cfg.teacher||'ครูนนท์'));
+  return L.join('\n');
+}
+
+/* ======================= วาดหน้าจอ ======================= */
+function syncInputs(){
+  $$('[data-k]').forEach(function(el){var v=cur[el.dataset.k];v=(v==null?'':String(v));if(el.value!==v)el.value=v});
+}
+function renderChips(){
+  var box=$('#chips'),d=cur.date;
+  if(!d){box.innerHTML='';$('#dayLabel').textContent='';return}
+  var p=d.split('-'),dow=new Date(+p[0],+p[1]-1,+p[2]).getDay();
+  $('#dayLabel').textContent=thaiDate(d)+(termFor(d)?' · ภาคเรียน '+termFor(d):'');
+  var term=termFor(d);chipList=S.tt.filter(function(x){return x.day===dow&&x.term===term}).sort(function(a,b){return a.period-b.period});
+  if(!chipList.length){box.innerHTML='<div class="empty">วันนี้ไม่มีคาบสอนตามตาราง — กรอกชั้น/วิชาเองด้านบนได้</div>';return}
+  box.innerHTML=chipList.map(function(x,i){
+    var done=S.assigns.some(function(a){return a.date===d&&Number(a.period)===x.period&&a.level===x.level});
+    var on=String(cur.period)===String(x.period)&&cur.level===x.level;
+    return '<button class="chip'+(on?' on':'')+'" data-act="slot" data-i="'+i+'"><b>คาบ '+x.period+' · '+esc(x.level)+'</b><br>'+esc(x.code)+' '+esc(x.subject)+'<br><span style="color:var(--mute);font-size:12px">'+esc(x.time)+'</span>'+(done?' <span class="done">✓ มอบหมายแล้ว</span>':'')+'</button>';
+  }).join('');
+}
+function renderQuiz(){
+  var box=$('#quizBox'),qs=cur.quiz||[];
+  $('#btnForm').disabled=!qs.length;
+  if(!qs.length){box.innerHTML='<div class="empty" style="margin-top:10px">ยังไม่มีข้อสอบ — กด “ให้ AI สร้างข้อสอบ”</div>';return}
+  box.innerHTML=qs.map(function(q,i){
+    return '<div class="qcard"><div class="qhead"><b style="font-family:Kanit">ข้อ '+(i+1)+'</b><button class="mini danger" data-act="delq" data-i="'+i+'">ลบข้อนี้</button></div>'+
+      '<textarea rows="2" data-q="'+i+'">'+esc(q.q)+'</textarea>'+
+      q.choices.map(function(c,j){
+        return '<label class="opt'+(q.answer===j?' ok':'')+'"><input type="radio" name="ans'+i+'" data-a="'+i+','+j+'"'+(q.answer===j?' checked':'')+'/><span class="lt">'+'กขคง'.charAt(j)+'</span><input type="text" data-c="'+i+','+j+'" value="'+esc(c)+'"/></label>';
+      }).join('')+(q.explain?'<div class="exp">เฉลย: '+esc(q.explain)+'</div>':'')+'</div>';
+  }).join('');
+}
+function renderFormRes(){
+  var b=$('#formRes');
+  if(!cur.formUrl){b.hidden=true;b.innerHTML='';return}
+  b.hidden=false;
+  b.innerHTML='✅ สร้างฟอร์มแล้ว<br><a href="'+esc(cur.formUrl)+'" target="_blank" rel="noopener">'+esc(cur.formUrl)+'</a>'+
+    (cur.formEdit?'<br><a href="'+esc(cur.formEdit)+'" target="_blank" rel="noopener">เปิดหน้าแก้ไขฟอร์ม</a>':'')+
+    '<div class="row"><button class="mini" data-act="copyForm">คัดลอกลิงก์ฟอร์ม</button></div>';
+}
+function setType(t){
+  cur.type=t;
+  $$('#typeSeg button').forEach(function(b){b.classList.toggle('on',b.dataset.t===t)});
+  $('#pForm').hidden=t!=='form';$('#pText').hidden=t!=='text';
+  if(!cur.submit||cur.submit===DEF_SUBMIT.form||cur.submit===DEF_SUBMIT.text){cur.submit=DEF_SUBMIT[t];syncInputs()}
+}
+function renderMsg(){
+  var w=$('#msgWrap');
+  if(cur.message){w.hidden=false;$('#msgBox').value=cur.message}else{w.hidden=true;$('#msgBox').value=''}
+  $('#saveNote').textContent=cur.id?'บันทึกในชีตแล้ว':'';
+}
+function refreshAll(){syncInputs();renderChips();renderQuiz();renderFormRes();setType(cur.type||'form');renderMsg()}
+
+function renderHistory(){
+  var q=($('#histSearch').value||'').trim().toLowerCase();
+  var list=S.assigns.filter(function(a){return !q||[a.topic,a.level,a.subject,a.code,a.date].join(' ').toLowerCase().indexOf(q)>=0});
+  var box=$('#histList');
+  if(!list.length){box.innerHTML='<div class="empty" style="margin-top:10px">'+(S.assigns.length?'ไม่พบรายการที่ค้นหา':'ยังไม่มีประวัติ')+'</div>';return}
+  box.innerHTML=list.map(function(a){
+    var i=S.assigns.indexOf(a);
+    return '<div class="hcard"><h3>'+esc(a.topic)+'</h3><div class="meta">'+thaiShort(a.date)+' · คาบ '+esc(a.period)+' · '+esc(a.level)+' · '+esc(a.code)+' '+esc(a.subject)+'</div>'+
+      '<div style="margin-top:4px">'+(a.clip?'<span class="badge">🎬 คลิป</span>':'')+(a.knowledge?'<span class="badge">📄 ใบความรู้</span>':'')+(a.type==='form'?'<span class="badge">📝 Form'+(a.formUrl?'':' (ยังไม่สร้าง)')+'</span>':'<span class="badge">✏️ โจทย์</span>')+'</div>'+
+      '<div class="row"><button class="mini" data-act="hCopy" data-i="'+i+'">คัดลอกข้อความ</button><button class="mini" data-act="hEdit" data-i="'+i+'">เปิดแก้ไข</button><button class="mini danger" data-act="hDel" data-i="'+i+'">ลบ</button></div></div>';
+  }).join('');
+}
+function renderSettings(){
+  $('#keyState').textContent=S.cfg.hasKey?'บันทึกแล้ว ✓':'ยังไม่ได้ตั้ง';
+  $('#sModel').value=S.cfg.model||'';$('#sTeacher').value=S.cfg.teacher||'';
+  $('#sMaster').value=S.cfg.master||DEFAULT_MASTER;
+  $('#sKey').value='';$('#sPin').value='';$('#sLogo').value=S.cfg.logo||DEFAULT_LOGO;$('#sFavicon').value=S.cfg.favicon||'';previewImgs();
+  renderFolders();
+  var a=$('#ssLink');if(S.ssUrl){a.href=S.ssUrl;a.textContent='· เปิดชีต';a.hidden=false}else a.hidden=true;
+  renderTT();
+
+}
+function renderFolders(){
+  var f=S.folders;
+  $('#folderBox').innerHTML=f?('โฟลเดอร์หลัก: <a href="'+esc(f.root.url)+'" target="_blank" rel="noopener">เปิดใน Drive</a> · ใบความรู้ แยกตามชั้น ม.1–ม.6 · แบบทดสอบ: <a href="'+esc(f.quiz.url)+'" target="_blank" rel="noopener">เปิด</a>'):'ยังไม่ได้เตรียมโฟลเดอร์ — กดปุ่มด้านบน (หรือระบบสร้างให้ตอนกดสร้าง prompt/ฟอร์มครั้งแรก)';
+}
+
+/* ======================= การกระทำ ======================= */
+async function ensureFolders(){if(S.folders)return S.folders;S.folders=await gasCall('apiPrepare',pinGet());renderFolders();return S.folders}
+
+async function upsertLocal(rec){
+  var i=S.assigns.findIndex(function(a){return a.id===rec.id});
+  var copy=JSON.parse(JSON.stringify(rec));
+  if(i>=0)S.assigns[i]=copy;else S.assigns.unshift(copy);
+}
+async function saveCur(){
+  var rec={};REC_KEYS.forEach(function(k){rec[k]=cur[k]});rec.quiz=cur.quiz;
+  var r=await api('apiSaveAssignment',rec);
+  cur.id=r.id;cur.created=r.created;rec.id=r.id;rec.created=r.created;
+  await upsertLocal(rec);renderChips();renderHistory();writeCache();
+}
+function loadRecord(r){
+  cur=Object.assign(newCur(),JSON.parse(JSON.stringify(r)));
+  if(!cur.type)cur.type='form';
+  tab('assign');refreshAll();window.scrollTo(0,0);
+}
+function tab(t){
+  $$('[id^=tab-]').forEach(function(s){s.hidden=s.id!=='tab-'+t});
+  $$('.tab').forEach(function(b){b.classList.toggle('on',b.dataset.t===t)});
+  if(t==='history')renderHistory();if(t==='settings')renderSettings();
+}
+
+var ACT={
+  tab:function(b){tab(b.dataset.t)},
+  type:function(b){setType(b.dataset.t)},
+  slot:function(b){
+    var s=chipList[+b.dataset.i],ex=S.assigns.find(function(a){return a.date===cur.date&&Number(a.period)===s.period&&a.level===s.level});
+    if(ex){loadRecord(ex);toast('เปิดงานที่เคยมอบหมายไว้แล้ว');return}
+    var d=cur.date;cur=newCur();cur.date=d;cur.period=s.period;cur.time=s.time;cur.level=s.level;cur.code=s.code;cur.subject=s.subject;refreshAll();
+  },
+  newJob:function(){var d=cur.date;cur=newCur();cur.date=d;refreshAll();window.scrollTo(0,0)},
+  prompt:async function(){
+    try{
+      need(['level','subject','topic']);
+      busy('เตรียมโฟลเดอร์ Drive…');
+      var f=await ensureFolders();unbusy();
+      var kn=f.kn[cur.level]||f.root;
+      var map={'ชั้น':cur.level,'วิชา':cur.subject,'รหัสวิชา':cur.code||'-','เรื่อง':cur.topic,'ตัวชี้วัด':cur.indicators||'(ไม่ได้ระบุ)','เนื้อหาเพิ่มเติม':cur.ref||'(ไม่ได้ระบุ)','ลิงก์โฟลเดอร์':kn.url,'ชื่อไฟล์':fileName()};
+      var txt=(S.cfg.master||DEFAULT_MASTER).replace(/\{\{([^}]+)\}\}/g,function(m,k){return map[k.trim()]!=null?map[k.trim()]:m});
+      modal('Master prompt ใบความรู้','<p class="hint">คัดลอกไปวางในแชตกับ Claude (ที่เชื่อม Google Drive) → ได้ลิงก์ PDF แล้วนำมาวางในช่อง “ลิงก์ใบความรู้”</p><textarea readonly id="pTxt">'+esc(txt)+'</textarea><p class="hint">โฟลเดอร์ปลายทาง: <a href="'+esc(kn.url)+'" target="_blank" rel="noopener">'+esc(cur.level)+' ใน Drive</a></p>',
+        [{label:'📋 คัดลอก prompt',cls:'',keep:true,fn:async function(){toast(await copyText(txt)?'คัดลอกแล้ว':'คัดลอกไม่สำเร็จ — เลือกข้อความแล้วคัดลอกเอง',false)}},{label:'ปิด'}]);
+    }catch(e){unbusy();toast(e.message,true)}
+  },
+  genQuiz:async function(){
+    try{
+      need(['level','subject','topic']);
+      busy('AI กำลังออกข้อสอบ… (ราว 10–30 วินาที)');
+      var r=await api('apiGenQuiz',{level:cur.level,subject:cur.subject,code:cur.code,topic:cur.topic,indicators:cur.indicators,ref:cur.ref,count:+$('#qCount').value,difficulty:$('#qDiff').value});
+      var had=!!cur.formUrl;
+      cur.quiz=r.questions;cur.formUrl='';cur.formEdit='';renderQuiz();renderFormRes();
+      toast('ได้ข้อสอบ '+r.questions.length+' ข้อ — ตรวจแก้ได้ก่อนสร้างฟอร์ม'+(had?' (ฟอร์มเดิมถูกถอดออกจากงานนี้)':''));
+    }catch(e){toast(e.message,true)}finally{unbusy()}
+  },
+  delq:function(b){cur.quiz.splice(+b.dataset.i,1);cur.formUrl='';cur.formEdit='';renderQuiz();renderFormRes()},
+  mkForm:async function(){
+    try{
+      if(!cur.quiz||!cur.quiz.length)throw new Error('ยังไม่มีข้อสอบ');
+      need(['level','topic']);
+      if(cur.formUrl&&!(await ask('สร้างฟอร์มใหม่?','งานนี้มีฟอร์มอยู่แล้ว ต้องการสร้างฟอร์มใหม่แทนหรือไม่ (ฟอร์มเดิมยังอยู่ใน Drive)','สร้างใหม่')))return;
+      busy('กำลังสร้าง Google Form…');
+      var r=await api('apiCreateForm',{title:'แบบทดสอบ '+cur.level+' เรื่อง '+cur.topic+' ('+thaiShort(cur.date)+')',level:cur.level,topic:cur.topic,questions:cur.quiz});
+      cur.formUrl=r.formUrl;cur.formEdit=r.formEdit;renderFormRes();
+      toast(r.warn?('สร้างแล้ว แต่: '+r.warn):'สร้าง Google Form เรียบร้อย',!!r.warn);
+    }catch(e){toast(e.message,true)}finally{unbusy()}
+  },
+  copyForm:async function(){toast(await copyText(cur.formUrl)?'คัดลอกลิงก์ฟอร์มแล้ว':'คัดลอกไม่สำเร็จ',false)},
+  genTask:async function(){
+    try{
+      need(['level','subject','topic']);
+      busy('AI กำลังร่างโจทย์…');
+      var r=await api('apiGenTask',{level:cur.level,subject:cur.subject,code:cur.code,topic:cur.topic,indicators:cur.indicators,ref:cur.ref});
+      cur.task=r.task;syncInputs();toast('ร่างโจทย์แล้ว — แก้ไขได้');
+    }catch(e){toast(e.message,true)}finally{unbusy()}
+  },
+  mkMsg:async function(){
+    try{
+      need(['level','subject','topic']);
+      if(cur.type==='form'&&!cur.formUrl&&!(await ask('ยังไม่มีลิงก์แบบทดสอบ','ยังไม่ได้สร้าง Google Form ต้องการออกข้อความโดยไม่มีลิงก์แบบทดสอบหรือไม่','ออกข้อความ')))return;
+      if(cur.type==='text'&&!String(cur.task).trim()&&!(await ask('ยังไม่มีโจทย์','ยังไม่ได้ใส่โจทย์ภาระงาน ต้องการออกข้อความต่อหรือไม่','ออกข้อความ')))return;
+      cur.message=buildMessage(cur);renderMsg();
+      busy('กำลังบันทึกลงชีต…');
+      await saveCur();renderMsg();
+      toast('บันทึกลงชีตแล้ว — กดคัดลอกข้อความได้เลย');
+      $('#msgWrap').scrollIntoView({behavior:'smooth',block:'center'});
+    }catch(e){toast(e.message,true)}finally{unbusy()}
+  },
+  copyMsg:async function(){toast(await copyText($('#msgBox').value)?'คัดลอกข้อความแล้ว':'คัดลอกไม่สำเร็จ — เลือกข้อความแล้วคัดลอกเอง',false)},
+  hCopy:async function(b){var a=S.assigns[+b.dataset.i];toast(await copyText(a.message||buildMessage(a))?'คัดลอกข้อความแล้ว':'คัดลอกไม่สำเร็จ',false)},
+  hEdit:function(b){loadRecord(S.assigns[+b.dataset.i])},
+  hDel:function(b){
+    var a=S.assigns[+b.dataset.i];
+    var acts=[{label:'ลบเฉพาะรายการ',cls:'warn',fn:function(){doDel(a,false)}}];
+    if(a.formEdit)acts.push({label:'ลบ + ย้ายฟอร์มไปถังขยะ',cls:'warn',fn:function(){doDel(a,true)}});
+    acts.push({label:'ยกเลิก'});
+    modal('ลบ “'+a.topic+'”?','<p class="hint">การลบรายการจะหายจากชีตด้วย</p>',acts);
+  },
+  loadModels:async function(){
+    try{
+      if($('#sKey').value.trim()){busy('บันทึก key…');await api('apiSaveSettings',{geminiKey:$('#sKey').value.trim()});S.cfg.hasKey=true;$('#sKey').value='';$('#keyState').textContent='บันทึกแล้ว ✓'}
+      busy('โหลดรายชื่อโมเดล…');
+      var r=await api('apiListModels');
+      $('#modelList').innerHTML=r.models.map(function(m){return '<option value="'+esc(m)+'">'}).join('');
+      toast('key ใช้ได้ — พบ '+r.models.length+' โมเดล (พิมพ์ในช่องโมเดลเพื่อเลือก)');
+    }catch(e){toast(e.message,true)}finally{unbusy()}
+  },
+  prepare:async function(){try{busy('กำลังเตรียมโฟลเดอร์…');S.folders=null;await ensureFolders();toast('โฟลเดอร์พร้อมแล้ว')}catch(e){toast(e.message,true)}finally{unbusy()}},
+  resetMaster:function(){$('#sMaster').value=DEFAULT_MASTER;toast('คืนค่าเริ่มต้นแล้ว (กดบันทึกเพื่อยืนยัน)')},
+  saveSet:async function(){
+    try{
+      var m=$('#sMaster').value,body={model:$('#sModel').value.trim(),teacher:$('#sTeacher').value.trim(),master:m.trim()===DEFAULT_MASTER.trim()?'':m};
+      if($('#sKey').value.trim())body.geminiKey=$('#sKey').value.trim();
+      var np=$('#sPin').value.trim();if(np)body.newPin=np;body.logo=$('#sLogo').value.trim();body.favicon=$('#sFavicon').value.trim();
+      busy('กำลังบันทึก…');
+      await api('apiSaveSettings',body);
+      S.cfg.model=body.model;S.cfg.teacher=body.teacher;S.cfg.master=body.master;S.cfg.logo=body.logo;S.cfg.favicon=body.favicon;if(body.geminiKey)S.cfg.hasKey=true;
+      if(np)pinSet(np);
+      applyBrand();writeCache();renderSettings();toast('บันทึกการตั้งค่าแล้ว');
+    }catch(e){toast(e.message,true)}finally{unbusy()}
+  },
+  install:async function(){
+    if(window.__bip){try{window.__bip.prompt();await window.__bip.userChoice}catch(e){}window.__bip=null;updInstallBtn();return}
+    showInstallHelp();
+  },
+  connect:async function(){
+    var url=$('#cUrl').value.trim(),pin=$('#cPin').value;
+    try{
+      if(!/^https:\/\/script\.google\.com\/\S+\/exec/.test(url))throw new Error('ลิงก์ต้องเป็น Web app ของ Apps Script ลงท้าย /exec');
+      if(!pin)throw new Error('ใส่ PIN');
+      busy('กำลังเชื่อมต่อ…');
+      var pr=await fetchT(url,15000).then(function(r){return r.json()}).catch(function(){return null});
+      if(!pr||!pr.ok)throw new Error('เชื่อมต่อลิงก์นี้ไม่ได้ — ตรวจว่า Deploy เป็น Anyone และคัดลอกลิงก์ /exec ถูกต้อง');
+      lsSet(CONN_KEY,JSON.stringify({url:url,pin:pin}));MODE='gas';
+      var d=await gasCall('apiBoot',pin);
+      Object.assign(S,d);writeCache();$('#conn').hidden=true;$('#demoBar').hidden=true;start2();toast('เชื่อมต่อแล้ว');
+    }catch(e){var ce=$('#cErr');ce.textContent=e.message;ce.hidden=false}finally{unbusy()}
+  },
+  demo:function(){MODE='demo';$('#conn').hidden=true;$('#demoBar').hidden=false;S.tt=Demo.getTT();start2()},
+  reconnect:function(){showConnect()},
+  logout:function(){lsDel(CONN_KEY);lsDel(CACHE_KEY);location.reload()},
+  impTT:function(){openImport('','','')},
+  ttTpl:function(){
+    var txt=ttTplText();
+    modal('แม่แบบ / ส่งออกตารางสอน (CSV)','<p class="hint">วัน: 1=จันทร์ … 5=ศุกร์ (หรือพิมพ์ชื่อวันก็ได้) · เปิดด้วย Excel แก้ได้ แล้วบันทึกเป็น CSV UTF-8 กลับมานำเข้า</p><textarea readonly style="min-height:200px">'+esc(txt)+'</textarea>',
+      [{label:'📋 คัดลอก',cls:'',keep:true,fn:async function(){toast(await copyText(txt)?'คัดลอกแล้ว':'คัดลอกไม่สำเร็จ',false)}},
+       {label:'⬇ ดาวน์โหลด .csv',keep:true,fn:function(){downloadText('ตารางสอน.csv',txt)}},{label:'ปิด'}]);
+  },
+  delTerm:async function(){
+    var term=$('#ttTerm').value;if(!term){toast('ยังไม่มีภาคเรียนให้ลบ',true);return}
+    if(!(await ask('ลบภาคเรียน '+term+'?','ลบตารางสอนของภาคเรียนนี้ทั้งหมด (ประวัติงานที่เคยมอบหมายไม่ถูกลบ)','ลบ','warn')))return;
+    try{busy('กำลังลบ…');var r=await api('apiDeleteTerm',{term:term});S.tt=r.tt;writeCache();renderChips();renderSettings();toast('ลบภาคเรียนแล้ว')}catch(e){toast(e.message,true)}finally{unbusy()}
+  }
+};
+async function doDel(a,trash){
+  try{busy('กำลังลบ…');await api('apiDeleteAssignment',{id:a.id,trashForm:trash});
+    S.assigns=S.assigns.filter(function(x){return x.id!==a.id});if(cur.id===a.id){cur=newCur();refreshAll()}
+    renderHistory();renderChips();writeCache();toast('ลบแล้ว')}catch(e){toast(e.message,true)}finally{unbusy()}
+}
+
+/* ======================= อัปโหลด PDF ======================= */
+async function uploadPdf(file){
+  if(!file)return;
+  try{
+    need(['level']);
+    if(MODE!=='gas'){await sleep(400)}
+    if(file.size>10*1024*1024)throw new Error('ไฟล์ใหญ่เกิน 10MB');
+    var prog=$('#upProg'),bar=$('#upBar');prog.hidden=false;bar.style.width='2%';
+    var b64=await new Promise(function(res,rej){var r=new FileReader();r.onload=function(e){res(String(e.target.result).split(',')[1])};r.onerror=rej;r.readAsDataURL(file)});
+    var p=8;bar.style.width='8%';
+    var t=setInterval(function(){p=Math.min(92,p+(92-p)*0.07);bar.style.width=p+'%'},250);
+    try{
+      var r=await api('apiUpload',{level:cur.level,filename:(fileName()||'ใบความรู้')+'.pdf',mimeType:file.type||'application/pdf',data:b64});
+      cur.knowledge=r.url;syncInputs();bar.style.width='100%';toast('อัปโหลดแล้ว — ใส่ลิงก์ให้เรียบร้อย');
+    }finally{clearInterval(t);setTimeout(function(){prog.hidden=true},700)}
+  }catch(e){toast(e.message,true)}
+  $('#upFile').value='';
+}
+
+/* ======================= แบรนด์ / PWA ======================= */
+var DEFAULT_LOGO='https://nonthaphathr.github.io/uploadimg/logo-sub-teach-assign.png'; /* โลโก้ตั้งต้น (ถ้าไม่ได้ตั้งค่าอื่นในแท็บตั้งค่า) */
+var APP={name:'ระบบมอบหมายงานสอนแทน',short:'งานสอนแทน',desc:'มอบหมายงานให้นักเรียนเมื่อครูไปราชการ — พัฒนาโดย ครูนนทพัทธ์ หิรัญเรือง',theme:'#2f6f5e',bg:'#f6f3ec',fallbackText:'สท'};
+function loadImgCors(src){return new Promise(function(res,rej){var im=new Image();im.crossOrigin='anonymous';im.onload=function(){res(im)};im.onerror=function(){rej(new Error('โหลดโลโก้ไม่ได้'))};im.src=src})}
+/* วาดโลโก้ลงพื้นขาวจัตุรัส (ไอคอนต้องทึบ) ไม่มีโลโก้ใช้อักษรย่อบนพื้นสีหลัก */
+function drawAppIcon(img,size,pad){
+  var c=document.createElement('canvas');c.width=c.height=size;var x=c.getContext('2d');
+  x.fillStyle=img?'#ffffff':APP.theme;x.fillRect(0,0,size,size);
+  if(img){var box=size*(1-2*pad),r=Math.min(box/img.width,box/img.height),w=img.width*r,h=img.height*r;x.drawImage(img,(size-w)/2,(size-h)/2,w,h)}
+  else{x.fillStyle='#ffffff';x.font='700 '+Math.round(size*.4)+'px sans-serif';x.textAlign='center';x.textBaseline='middle';x.fillText(APP.fallbackText,size/2,size/2+size*.02)}
+  return c.toDataURL('image/png');
+}
+function setHeadLink(rel,href,attrs){
+  var l=document.querySelector('link[rel="'+rel+'"]');if(!l){l=document.createElement('link');l.rel=rel;document.head.appendChild(l)}
+  l.href=href;Object.keys(attrs||{}).forEach(function(k){l.setAttribute(k,attrs[k])});return l;
+}
+function setupPwaIcons(logoUrl,app){
+  var dead=false,blobUrl=null;
+  (async function(){
+    var icons,apple,img=null;
+    if(logoUrl){try{img=await loadImgCors(logoUrl)}catch(e){img=null}}
+    try{
+      if(logoUrl&&!img)throw new Error('cors');   /* โหลดแบบ CORS ไม่ได้ → ใช้ลิงก์ตรงเป็นไอคอน */
+      var a=drawAppIcon(img,192,.1),b=drawAppIcon(img,512,.1),m=drawAppIcon(img,512,.22);
+      icons=[{src:a,sizes:'192x192',type:'image/png',purpose:'any'},{src:b,sizes:'512x512',type:'image/png',purpose:'any'},{src:m,sizes:'512x512',type:'image/png',purpose:'maskable'}];
+      apple=drawAppIcon(img,180,.1);
+    }catch(e){if(!logoUrl)return;icons=[{src:logoUrl,sizes:'192x192 512x512',purpose:'any'}];apple=logoUrl}
+    if(dead)return;
+    var base=location.origin+location.pathname;   /* start_url/scope ต้องเป็น URL เต็ม เพราะ manifest เป็น blob: */
+    var manifest={id:base,name:app.name,short_name:app.short,description:app.desc,start_url:base,scope:base,display:'standalone',orientation:'portrait',background_color:app.bg,theme_color:app.theme,lang:'th',icons:icons};
+    blobUrl=URL.createObjectURL(new Blob([JSON.stringify(manifest)],{type:'application/manifest+json'}));
+    setHeadLink('manifest',blobUrl);
+    setHeadLink('apple-touch-icon',apple,{sizes:'180x180'});
+  })();
+  return function(){dead=true;if(blobUrl)setTimeout(function(){URL.revokeObjectURL(blobUrl)},1000)};
+}
+var pwaOff=null;
+function applyBrand(){
+  var logo=S.cfg.logo||DEFAULT_LOGO,fav=S.cfg.favicon||'',im=$('#brandLogo');
+  if(logo){im.onerror=function(){im.hidden=true};im.src=logo;im.hidden=false}else{im.hidden=true}
+  var fh=fav||logo;if(!fh){try{fh=drawAppIcon(null,64,0)}catch(e){fh='data:,'}}
+  setHeadLink('icon',fh);
+  document.title=APP.name;
+  if(pwaOff)pwaOff();pwaOff=setupPwaIcons(logo,APP);
+  updInstallBtn();
+}
+function previewImgs(){
+  [['#sLogo','#pvLogo'],['#sFavicon','#pvFav']].forEach(function(p){
+    var u=$(p[0]).value.trim(),im=$(p[1]);
+    if(/^https?:\/\//.test(u)){im.onerror=function(){im.hidden=true};im.src=u;im.hidden=false}else{im.hidden=true}
+  });
+}
+function isStandalone(){try{return (matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone===true}catch(e){return false}}
+function updInstallBtn(){var b=$('#btnInstall');if(b)b.hidden=isStandalone()}
+window.addEventListener('appinstalled',function(){window.__bip=null;updInstallBtn()});
+function showInstallHelp(){
+  var ios=/iphone|ipad|ipod/i.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  var android=/android/i.test(navigator.userAgent);
+  var lg=S.cfg.logo||DEFAULT_LOGO;var logo=lg?'<div class="pv"><img src="'+esc(lg)+'" alt=""/><span class="hint">ไอคอนแอปจะใช้โลโก้นี้</span></div>':'<div class="warn-l">ยังไม่ได้ตั้งโลโก้ — ไอคอนจะเป็นตัวอักษรย่อ (ตั้งโลโก้ได้ที่แท็บ “ตั้งค่า”)</div>';
+  modal('ติดตั้งเป็นแอป',logo+
+    '<div class="inst'+(ios?' on':'')+'"><b>iPhone / iPad (Safari)</b><br>แตะปุ่มแชร์ → เลื่อนลงเลือก “เพิ่มไปยังหน้าจอโฮม” → แตะ “เพิ่ม”</div>'+
+    '<div class="inst'+(android?' on':'')+'"><b>Android (Chrome)</b><br>แตะเมนู ⋮ → “ติดตั้งแอป” หรือ “เพิ่มลงในหน้าจอหลัก”</div>'+
+    '<div class="inst'+(!ios&&!android?' on':'')+'"><b>คอมพิวเตอร์ (Chrome / Edge)</b><br>กดไอคอนติดตั้งท้ายช่องที่อยู่เว็บ</div>');
+}
+
+/* ======================= ตารางสอนรายภาคเรียน ======================= */
+function termFor(date){
+  var m={};S.tt.forEach(function(x){if(x.term&&m[x.term]==null)m[x.term]=x.start||''});
+  var terms=Object.keys(m).map(function(t){return {term:t,start:m[t]}}).sort(function(a,b){return a.start<b.start?-1:(a.start>b.start?1:0)});
+  if(!terms.length)return '';
+  var pick=terms[0];terms.forEach(function(t){if(t.start&&t.start<=date)pick=t});
+  return pick.term;
+}
+function renderTT(){
+  var sel=$('#ttTerm'),prev=sel.value,m={};
+  S.tt.forEach(function(x){var k=x.term||'';var t=m[k]=m[k]||{term:k,start:x.start||'',n:0};t.n++});
+  var terms=Object.keys(m).map(function(k){return m[k]}).sort(function(a,b){return a.start<b.start?1:(a.start>b.start?-1:0)});
+  if(!terms.length){sel.innerHTML='<option value="">(ยังไม่มีตารางสอน)</option>';$('#ttBox').innerHTML='<div class="empty">ยังไม่มีตารางสอน — กด “นำเข้าตารางสอน”</div>';return}
+  sel.innerHTML=terms.map(function(t){return '<option value="'+esc(t.term)+'">'+esc(t.term||'(ไม่ระบุ)')+' · เริ่มใช้ '+(t.start?thaiShort(t.start):'-')+' · '+t.n+' คาบ</option>'}).join('');
+  sel.value=(prev&&m[prev]!=null)?prev:termFor(todayISO());
+  var cur2=sel.value,days={};
+  S.tt.filter(function(x){return (x.term||'')===cur2}).forEach(function(x){(days[x.day]=days[x.day]||[]).push(x)});
+  var html='<table class="tt"><tr><th>วัน</th><th>คาบ</th><th>ชั้น</th><th>วิชา</th></tr>';
+  [1,2,3,4,5,6,7].forEach(function(d){(days[d]||[]).sort(function(a,b){return a.period-b.period}).forEach(function(x,i){
+    html+='<tr><td>'+(i===0?DAYS[d%7]:'')+'</td><td>'+x.period+' <span style="color:var(--mute)">'+esc(x.time)+'</span></td><td>'+esc(x.level)+'</td><td>'+esc(x.code)+' '+esc(x.subject)+'</td></tr>'})});
+  $('#ttBox').innerHTML=html+'</table>';
+}
+
+var DAY_NAMES=[['จันทร์',1],['อังคาร',2],['พุธ',3],['พฤหัส',4],['ศุกร์',5],['เสาร์',6],['อาทิตย์',7],['mon',1],['tue',2],['wed',3],['thu',4],['fri',5],['sat',6],['sun',7]];
+var HEAD_ALIAS={day:['วัน','day'],period:['คาบ','คาบที่','period'],level:['ชั้น','ระดับชั้น','class','level'],code:['รหัสวิชา','รหัส','code'],subject:['วิชา','ชื่อวิชา','subject'],time:['เวลา','time']};
+function parseDelim(text){
+  text=String(text||'').replace(/^\uFEFF/,'');
+  var first=(text.split(/\r?\n/).filter(function(l){return l.trim()})[0])||'';
+  var d=first.indexOf('\t')>=0?'\t':(first.split(';').length>first.split(',').length?';':',');
+  var rows=[],row=[],cell='',q=false;
+  for(var i=0;i<text.length;i++){var ch=text.charAt(i);
+    if(q){if(ch==='"'){if(text.charAt(i+1)==='"'){cell+='"';i++}else q=false}else cell+=ch}
+    else if(ch==='"')q=true;
+    else if(ch===d){row.push(cell);cell=''}
+    else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&text.charAt(i+1)==='\n')i++;row.push(cell);cell='';rows.push(row);row=[]}
+    else cell+=ch;
+  }
+  if(cell!==''||row.length){row.push(cell);rows.push(row)}
+  return rows.filter(function(r){return r.some(function(c){return String(c).trim()})});
+}
+function normDay(v){
+  var s=String(v).trim().toLowerCase().replace(/^วัน/,'');
+  if(/^[1-7]$/.test(s))return +s;
+  for(var i=0;i<DAY_NAMES.length;i++)if(s.indexOf(DAY_NAMES[i][0])===0)return DAY_NAMES[i][1];
+  return 0;
+}
+function normPeriod(v,time){
+  var s=String(v).trim(),m=s.match(/(\d{1,2})/);
+  if(m&&+m[1]>=1&&+m[1]<=12&&!/[:.]/.test(s))return +m[1];
+  var t=String(time||s).replace('.',':').match(/(\d{1,2}):(\d{2})/);
+  if(t){var st=pad(+t[1])+':'+t[2];for(var k in PERIODS)if(PERIODS[k].indexOf(st)===0)return +k}
+  return 0;
+}
+function normLevel(v){
+  var s=String(v).trim(),m=s.match(/^(?:ม\.?\s*)?([1-6])(?:\s*[\/\-]\s*\d+)?$/);
+  return m?'ม.'+m[1]:s;
+}
+function parseTimetable(text){
+  var rows=parseDelim(text),warns=[],out=[];
+  if(!rows.length)return {rows:[],warns:[]};
+  var h=rows[0].map(function(c){return String(c).trim().toLowerCase().replace(/\s*\(.*$/,'')}),idx={};
+  Object.keys(HEAD_ALIAS).forEach(function(k){var i=h.findIndex(function(c){return HEAD_ALIAS[k].indexOf(c)>=0});if(i>=0)idx[k]=i});
+  var map,start;
+  if(idx.day!=null&&idx.period!=null){map=idx;start=1}else{map={day:0,period:1,time:2,level:3,code:4,subject:5};start=0}
+  for(var i=start;i<rows.length;i++){
+    var r=rows[i],get=function(k){return map[k]!=null&&r[map[k]]!=null?String(r[map[k]]).trim():''};
+    var day=normDay(get('day')),time=get('time'),period=normPeriod(get('period'),time),level=normLevel(get('level')),code=get('code'),subject=get('subject');
+    if(!day||!period||!level||!(code||subject)){warns.push('แถว '+(i+1)+' ข้าม: '+(!day?'วันไม่ถูกต้อง':!period?'คาบไม่ถูกต้อง':!level?'ไม่มีชั้น':'ไม่มีวิชา'));continue}
+    out.push({day:day,period:period,time:time||PERIODS[period]||'',level:level,code:code,subject:subject});
+  }
+  return {rows:out,warns:warns};
+}
+function guessTerm(t){var m=String(t||'').match(/([12])\s*[\/\-]\s*(25\d\d)/);return m?m[1]+'/'+m[2]:''}
+function csvCell(v){v=String(v==null?'':v);return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
+function ttTplText(){
+  var sel=$('#ttTerm'),term=sel?sel.value:'';
+  var rows=S.tt.filter(function(x){return (x.term||'')===term});
+  if(!rows.length)rows=Demo.seed().slice(0,4);
+  rows=rows.slice().sort(function(a,b){return a.day-b.day||a.period-b.period});
+  return ['วัน,คาบ,เวลา,ชั้น,รหัสวิชา,วิชา'].concat(rows.map(function(x){return [x.day,x.period,x.time,x.level,x.code,x.subject].map(csvCell).join(',')})).join('\n');
+}
+function downloadText(name,text){
+  try{var b=new Blob(['\uFEFF'+text],{type:'text/csv;charset=utf-8'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;document.body.appendChild(a);a.click();setTimeout(function(){a.remove();URL.revokeObjectURL(a.href)},500)}
+  catch(e){toast('ดาวน์โหลดไม่สำเร็จ — ใช้ปุ่มคัดลอกแทน',true)}
+}
+function loadXlsx(){
+  return window.XLSX?Promise.resolve():new Promise(function(res,rej){
+    var s=document.createElement('script');s.src='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+    s.onload=res;s.onerror=function(){rej(new Error('โหลดตัวอ่าน Excel ไม่ได้ — บันทึกเป็น CSV แล้วลองใหม่'))};document.head.appendChild(s);
+  });
+}
+async function readFileText(file){
+  var buf=await file.arrayBuffer();
+  if(/\.xlsx?$/i.test(file.name)){
+    await loadXlsx();
+    var wb=window.XLSX.read(buf,{type:'array'});
+    return window.XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+  }
+  var t=new TextDecoder('utf-8').decode(buf);
+  if(t.indexOf(String.fromCharCode(65533))>=0){try{t=new TextDecoder('windows-874').decode(buf)}catch(e){}}
+  return t;
+}
+var iParsed=[];
+function previewHtml(r,exists,term){
+  if(!r.rows.length)return '<div class="warn-l">ยังไม่พบแถวตารางสอนที่ใช้ได้'+(r.warns.length?' ('+esc(r.warns[0])+')':'')+'</div>';
+  var by={};r.rows.forEach(function(x){by[x.level]=(by[x.level]||0)+1});
+  var h='<div class="hint" style="margin-top:8px">พบ <b>'+r.rows.length+'</b> คาบ · '+Object.keys(by).sort().map(function(k){return esc(k)+' '+by[k]}).join(' · ')+'</div>';
+  if(exists)h+='<div class="warn-l">ภาคเรียน '+esc(term)+' มีอยู่แล้ว — จะถูกแทนที่ทั้งภาคเรียน</div>';
+  if(r.warns.length)h+='<div class="warn-l">ข้าม '+r.warns.length+' แถว: '+esc(r.warns.slice(0,4).join(' · '))+(r.warns.length>4?' …':'')+'</div>';
+  h+='<table class="ptab"><tr><th>วัน</th><th>คาบ</th><th>ชั้น</th><th>วิชา</th></tr>'+r.rows.slice(0,8).map(function(x){return '<tr><td>'+DAYS[x.day%7]+'</td><td>'+x.period+'</td><td>'+esc(x.level)+'</td><td>'+esc(x.code)+' '+esc(x.subject)+'</td></tr>'}).join('')+'</table>';
+  if(r.rows.length>8)h+='<div class="hint">…และอีก '+(r.rows.length-8)+' คาบ</div>';
+  return h;
+}
+function openImport(text,term,start){
+  iParsed=[];
+  var close=modal('นำเข้าตารางสอนรายภาคเรียน',
+    '<div class="g2"><div><label class="f">ภาคเรียน (เช่น 2/2569)</label><input type="text" id="iTerm"/></div><div><label class="f">เริ่มใช้ตั้งแต่วันที่</label><input type="date" id="iStart"/></div></div>'+
+    '<label class="f">ไฟล์ CSV / Excel (.xlsx)</label><input type="file" id="iFile" accept=".csv,.tsv,.txt,.xlsx,.xls"/>'+
+    '<label class="f">หรือวาง/แก้ข้อมูลที่นี่ — คอลัมน์: วัน, คาบ, เวลา, ชั้น, รหัสวิชา, วิชา</label><textarea id="iText" style="min-height:110px"></textarea><div id="iPrev"></div>',
+    [{label:'นำเข้า',keep:true,fn:function(){doImport(close)}},{label:'ปิด'}]);
+  $('#iTerm').value=term||guessTerm(text)||'';$('#iStart').value=start||todayISO();$('#iText').value=text||'';
+  var btn=$('#mAct button');
+  function upd(){
+    var r=parseTimetable($('#iText').value);iParsed=r.rows;
+    var t=$('#iTerm').value.trim(),exists=S.tt.some(function(x){return x.term===t});
+    btn.disabled=!iParsed.length;btn.textContent=exists?'แทนที่ภาคเรียนนี้':'นำเข้า';
+    $('#iPrev').innerHTML=previewHtml(r,exists,t);
+  }
+  $('#iText').addEventListener('input',upd);$('#iTerm').addEventListener('input',upd);
+  $('#iFile').addEventListener('change',async function(e){
+    var f=e.target.files[0];if(!f)return;
+    try{
+      $('#iPrev').innerHTML='<div class="hint">กำลังอ่านไฟล์…</div>';
+      var tx=await readFileText(f);$('#iText').value=tx;
+      var g=guessTerm(tx+' '+f.name);if(g&&!$('#iTerm').value.trim())$('#iTerm').value=g;
+      upd();
+    }catch(err){$('#iPrev').innerHTML='<div class="warn-l">'+esc(err.message)+'</div>'}
+  });
+  upd();
+}
+async function doImport(close){
+  var term=$('#iTerm').value.trim(),start=$('#iStart').value,text=$('#iText').value,rows=iParsed.slice();
+  if(!term){toast('ใส่ชื่อภาคเรียน เช่น 2/2569',true);return}
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(start)){toast('เลือกวันที่เริ่มใช้',true);return}
+  if(!rows.length){toast('ไม่พบแถวตารางสอนที่ใช้ได้',true);return}
+  close();
+  try{busy('กำลังนำเข้าตารางสอน…');var r=await api('apiImportTimetable',{term:term,start:start,rows:rows});S.tt=r.tt;writeCache();renderChips();renderSettings();toast('นำเข้าภาคเรียน '+term+' แล้ว ('+rows.length+' คาบ)')}
+  catch(e){toast(e.message,true);openImport(text,term,start)}finally{unbusy()}
+}
+
+/* ======================= ผูกอีเวนต์ ======================= */
+document.addEventListener('click',function(e){
+  var b=e.target.closest('[data-act]');
+  if(b&&ACT[b.dataset.act]){ACT[b.dataset.act](b,e)}
+});
+document.addEventListener('input',function(e){
+  var t=e.target,d=t.dataset||{};
+  if(d.k){
+    cur[d.k]=t.value;
+    if(d.k==='date')renderChips();
+    if(d.k==='period'){cur.time=PERIODS[t.value]||'';syncInputs();renderChips()}
+    if(d.k==='level')renderChips();
+    return;
+  }
+  if(d.q!=null){cur.quiz[+d.q].q=t.value;return}
+  if(d.c!=null){var c=d.c.split(',').map(Number);cur.quiz[c[0]].choices[c[1]]=t.value;return}
+  if(d.a!=null){var a=d.a.split(',').map(Number);cur.quiz[a[0]].answer=a[1];
+    var opts=t.closest('.qcard').querySelectorAll('.opt');for(var k=0;k<opts.length;k++)opts[k].classList.toggle('ok',k===a[1]);return}
+  if(t.id==='msgBox'){cur.message=t.value;return}
+  if(t.id==='histSearch'){renderHistory();return}
+  if(t.id==='sLogo'||t.id==='sFavicon'){previewImgs();return}
+});
+document.addEventListener('change',function(e){if(e.target.id==='upFile')uploadPdf(e.target.files[0]);if(e.target.id==='ttTerm')renderTT()});
+
+function showConnect(msg){
+  var c=connGet();$('#cUrl').value=GAS_URL_CONST||c.url||'';$('#cPin').value='';
+  var e=$('#cErr');if(msg){e.textContent=msg;e.hidden=false}else e.hidden=true;
+  $('#conn').hidden=false;
+}
+function start2(){refreshAll();renderHistory();renderSettings();applyBrand()}
+function readCache(){try{return JSON.parse(lsGet(CACHE_KEY)||'null')}catch(e){return null}}
+function writeCache(){if(MODE!=='gas')return;try{lsSet(CACHE_KEY,JSON.stringify({tt:S.tt,assigns:S.assigns.slice(0,120),cfg:S.cfg,folders:S.folders,ssUrl:S.ssUrl}))}catch(e){}}
+async function start(){
+  applyBrand();
+  if(!(gasUrl()&&pinGet())){showConnect();return}
+  MODE='gas';
+  var c=readCache();if(c){Object.assign(S,c);start2()}   /* แสดงข้อมูลเดิมทันที แล้วค่อยรีเฟรชจากชีต */
+  try{var d=await gasCall('apiBoot',pinGet());Object.assign(S,d);writeCache();start2()}
+  catch(e){if(!$('#conn').hidden)return;toast(c?'ออฟไลน์ — ใช้ข้อมูลที่เก็บไว้ในเครื่อง':'เชื่อมต่อไม่สำเร็จ: '+e.message,true)}
+}
+start();
+})();
+</script>
+<div id="appEndOfFile" hidden></div>
+</body>
+</html>
