@@ -373,34 +373,37 @@ function gemini_(prompt, schema) {
   const P = PropertiesService.getScriptProperties();
   const key = P.getProperty('GEMINI_KEY');
   if (!key) throw new Error('ยังไม่ได้ตั้งค่า Gemini API key — ไปที่แท็บ "ตั้งค่า"');
-  const model = P.getProperty('GEMINI_MODEL') || 'gemini-flash-latest';
-  const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(model) + ':generateContent';
-  const opts = {
-    method: 'post', contentType: 'application/json', muteHttpExceptions: true,
-    headers: { 'x-goog-api-key': key },
-    payload: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.7, responseMimeType: 'application/json', responseSchema: schema }
-    })
-  };
-  let code = 0, txt = '';
-  for (let t = 0; t < 3; t++) {
-    const res = UrlFetchApp.fetch(url, opts);
-    code = res.getResponseCode(); txt = res.getContentText();
-    if (code === 429 || code === 503) { Utilities.sleep(2500 * (t + 1)); continue; }
-    break;
+  const main = P.getProperty('GEMINI_MODEL') || 'gemini-flash-latest';
+  // ถ้าโมเดลหลักไม่ว่าง (503/429) หรือใช้ไม่ได้ (404) ให้ลองโมเดลสำรองต่อทันที ไม่ต้องรอนาน
+  const models = [main].concat(['gemini-flash-lite-latest', 'gemini-2.5-flash'].filter(function (m) { return m !== main; }));
+  const payload = JSON.stringify({
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.7, responseMimeType: 'application/json', responseSchema: schema }
+  });
+  let last = '';
+  for (let mi = 0; mi < models.length; mi++) {
+    const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + encodeURIComponent(models[mi]) + ':generateContent';
+    const opts = { method: 'post', contentType: 'application/json', muteHttpExceptions: true, headers: { 'x-goog-api-key': key }, payload: payload };
+    for (let t = 0; t < 2; t++) {
+      let res;
+      try { res = UrlFetchApp.fetch(url, opts); } catch (e) { last = 'เรียก Gemini ไม่สำเร็จ (' + models[mi] + '): ' + (e && e.message || e); break; }
+      const code = res.getResponseCode(), txt = res.getContentText();
+      if (code === 200) {
+        const j = JSON.parse(txt);
+        const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
+        const out = parts ? parts.map(function (p) { return p.text || ''; }).join('') : '';
+        if (!out) throw new Error('Gemini ไม่ส่งผลลัพธ์กลับมา (อาจถูกกรองเนื้อหา) — ลองใหม่อีกครั้ง');
+        return JSON.parse(out);
+      }
+      let m = txt.slice(0, 300);
+      try { m = JSON.parse(txt).error.message; } catch (e) { }
+      last = 'Gemini ' + code + ' (' + models[mi] + '): ' + m;
+      if (code === 503 || code === 429) { if (t === 0) { Utilities.sleep(2000); continue; } break; }
+      if (code === 404 || (code === 400 && !/api key/i.test(m))) break;   // โมเดลนี้ใช้ไม่ได้ → ลองตัวถัดไป
+      throw new Error(last);                                                // key ผิด/ไม่มีสิทธิ์ ฯลฯ
+    }
   }
-  if (code === 429) throw new Error('โควตา Gemini ฟรีเต็มชั่วคราว — รอสักครู่แล้วลองใหม่');
-  if (code !== 200) {
-    let m = txt.slice(0, 300);
-    try { m = JSON.parse(txt).error.message; } catch (e) { }
-    throw new Error('Gemini ' + code + ': ' + m);
-  }
-  const j = JSON.parse(txt);
-  const parts = j.candidates && j.candidates[0] && j.candidates[0].content && j.candidates[0].content.parts;
-  const out = parts ? parts.map(function (p) { return p.text || ''; }).join('') : '';
-  if (!out) throw new Error('Gemini ไม่ส่งผลลัพธ์กลับมา (อาจถูกกรองเนื้อหา) — ลองใหม่อีกครั้ง');
-  return JSON.parse(out);
+  throw new Error('AI ไม่ว่างชั่วคราว ลองใหม่ในอีก 1-2 นาที — ' + last);
 }
 
 function shuffleQ_(q) {
