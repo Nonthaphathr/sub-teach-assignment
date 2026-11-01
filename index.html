@@ -293,7 +293,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-l);border-co
     <label class="f">เปลี่ยน PIN (เว้นว่าง = ไม่เปลี่ยน)</label>
     <input type="password" id="sPin" placeholder="PIN ใหม่ (≥ 4 ตัว)" autocomplete="off"/>
     <div class="hint">PIN จำเป็นเสมอ เพราะหน้าเว็บอยู่บน GitHub Pages (เปิดสาธารณะ)</div>
-    <div class="row"><button class="btn alt" data-act="reconnect">เปลี่ยนลิงก์/PIN การเชื่อมต่อ</button><button class="btn alt" data-act="logout">ออกจากระบบเครื่องนี้</button></div>
+    <div class="row"><button class="btn alt" data-act="shareLink">📱 คัดลอกลิงก์สำหรับเปิดบนมือถือ</button><button class="btn alt" data-act="reconnect">เปลี่ยนลิงก์/PIN การเชื่อมต่อ</button><button class="btn alt" data-act="logout">ออกจากระบบเครื่องนี้</button></div>
   </div>
 
   <div class="card">
@@ -384,6 +384,7 @@ function todayISO(){var d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()
 function thaiDate(iso){if(!iso)return '';var p=iso.split('-');var d=new Date(+p[0],+p[1]-1,+p[2]);return 'วัน'+DAYS[d.getDay()]+'ที่ '+d.getDate()+' '+MONTHS[d.getMonth()]+' '+(d.getFullYear()+543)}
 function thaiShort(iso){if(!iso)return '';var p=iso.split('-');return (+p[2])+' '+MONTHS[+p[1]-1].slice(0,3)+'. '+(((+p[0])+543)%100)}
 var CONN_KEY='sa_conn_v1', CACHE_KEY='sa_boot_v1';
+var PREFILL_URL='';
 var GAS_URL_CONST=''; /* ← ใส่ลิงก์ Web app (/exec) ตรงนี้ได้ ถ้าไม่อยากกรอกในหน้าเว็บ */
 function lsGet(k){try{return localStorage.getItem(k)||''}catch(e){return ''}}
 function lsSet(k,v){try{localStorage.setItem(k,v)}catch(e){}}
@@ -761,6 +762,11 @@ var ACT={
     }catch(e){var ce=$('#cErr');ce.textContent=e.message;ce.hidden=false}finally{unbusy()}
   },
   demo:function(){MODE='demo';$('#conn').hidden=true;$('#demoBar').hidden=false;S.tt=Demo.getTT();S.bank=Demo.bankMeta();start2()},
+  shareLink:async function(){
+    var u=gasUrl();if(!u){toast('ยังไม่ได้เชื่อมต่อ',true);return}
+    var link=location.origin+location.pathname+'#u='+encodeURIComponent(u);
+    toast(await copyText(link)?'คัดลอกแล้ว — ส่งเข้า LINE/อีเมลตัวเอง เปิดบนมือถือ แล้วใส่ PIN (ลิงก์นี้ไม่มี PIN)':'คัดลอกไม่สำเร็จ',false);
+  },
   reconnect:function(){showConnect()},
   logout:function(){lsDel(CONN_KEY);lsDel(CACHE_KEY);location.reload()},
   impTT:function(){openImport('','','')},
@@ -1095,7 +1101,7 @@ document.addEventListener('input',function(e){
 document.addEventListener('change',function(e){if(e.target.id==='upFile')uploadPdf(e.target.files[0]);if(e.target.id==='ttTerm')renderTT()});
 
 function showConnect(msg){
-  var c=connGet();$('#cUrl').value=GAS_URL_CONST||c.url||'';$('#cPin').value='';
+  var c=connGet();$('#cUrl').value=GAS_URL_CONST||c.url||PREFILL_URL||'';$('#cPin').value='';
   var e=$('#cErr');if(msg){e.textContent=msg;e.hidden=false}else e.hidden=true;
   $('#conn').hidden=false;
 }
@@ -1103,6 +1109,7 @@ function start2(){refreshAll();renderHistory();renderSettings();applyBrand()}
 function readCache(){try{return JSON.parse(lsGet(CACHE_KEY)||'null')}catch(e){return null}}
 function writeCache(){if(MODE!=='gas')return;try{lsSet(CACHE_KEY,JSON.stringify({tt:S.tt,assigns:S.assigns.slice(0,120),bank:S.bank,cfg:S.cfg,folders:S.folders,ssUrl:S.ssUrl}))}catch(e){}}
 async function start(){
+  try{var hm=location.hash.match(/[#&]u=([^&]+)/);if(hm){var pu=decodeURIComponent(hm[1]);if(/^https:\/\/script\.google\.com\/\S+\/exec/.test(pu))PREFILL_URL=pu;history.replaceState(null,'',location.pathname+location.search)}}catch(e){}
   applyBrand();
   if(!(gasUrl()&&pinGet())){showConnect();return}
   MODE='gas';
