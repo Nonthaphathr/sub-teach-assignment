@@ -77,7 +77,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-l);border-co
 .chip .done{color:var(--ok);font-size:12px}
 .empty{color:var(--mute);background:#faf8f3;border:1px dashed var(--line);border-radius:10px;padding:12px;font-size:14px}
 .hint{font-size:13px;color:var(--mute);margin-top:4px}
-.seg{display:inline-flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
+.seg{flex-wrap:wrap;display:inline-flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#fff}
 .seg button{border:0;background:#fff;padding:9px 16px;font:15px 'Kanit',sans-serif;cursor:pointer;color:var(--mute)}
 .seg button.on{background:var(--pri);color:#fff}
 .qcard{border:1px solid var(--line);border-radius:12px;padding:10px;margin-top:10px;background:#fffdf8}
@@ -188,6 +188,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-l);border-co
     <div class="seg" id="typeSeg">
       <button data-act="type" data-t="form" class="on">📝 Google Form (แบบทดสอบ)</button>
       <button data-act="type" data-t="text">✏️ โจทย์ข้อความ</button>
+      <button data-act="type" data-t="tpl">🧩 แม่แบบภาระงาน</button>
     </div>
 
     <div id="pForm">
@@ -208,6 +209,15 @@ input:focus,select:focus,textarea:focus{outline:2px solid var(--pri-l);border-co
       <label class="f">โจทย์ภาระงาน</label>
       <textarea data-k="task" rows="6" placeholder="1) …&#10;2) …"></textarea>
       <div class="row"><button class="btn ai" data-act="genTask">✨ ให้ AI ร่างโจทย์</button></div>
+    </div>
+
+    <div id="pTpl" hidden>
+      <label class="f">เลือกแม่แบบภาระงาน</label>
+      <select id="tplSel"><option value="">— เลือกแม่แบบ —</option></select>
+      <div id="tplFields"></div>
+      <label class="f">ข้อความโจทย์ (แก้ไขได้ — ถ้าเปลี่ยนค่าด้านบนหลังแก้เอง กด “สร้างโจทย์ใหม่”)</label>
+      <textarea data-k="task" rows="9"></textarea>
+      <div class="row"><button class="btn alt" data-act="tplRegen">🔄 สร้างโจทย์ใหม่จากแม่แบบ</button></div>
     </div>
 
     <label class="f" style="margin-top:14px">วิธีส่งงาน</label>
@@ -485,7 +495,7 @@ var Demo={
 
 /* ======================= สถานะงานปัจจุบัน ======================= */
 var REC_KEYS=['id','created','date','period','time','level','code','subject','topic','indicators','type','clip','knowledge','formUrl','formEdit','task','submit','note','message'];
-function newCur(){return {id:'',created:'',date:todayISO(),period:'',time:'',level:'',code:'',subject:'',topic:'',indicators:'',ref:'',bankId:'',type:'form',clip:'',knowledge:'',quiz:null,formUrl:'',formEdit:'',task:'',submit:DEF_SUBMIT.form,note:'',message:''}}
+function newCur(){return {id:'',created:'',date:todayISO(),period:'',time:'',level:'',code:'',subject:'',topic:'',indicators:'',ref:'',bankId:'',tplId:'',tplp:{},tplAuto:true,type:'form',clip:'',knowledge:'',quiz:null,formUrl:'',formEdit:'',task:'',submit:DEF_SUBMIT.form,note:'',message:''}}
 var cur=newCur(), chipList=[];
 
 function need(keys){var miss=keys.filter(function(k){return !String(cur[k]||'').trim()}).map(function(k){return LBL[k]});if(miss.length)throw new Error('กรอก '+miss.join(', ')+' ก่อน')}
@@ -550,18 +560,25 @@ function renderFormRes(){
     (cur.formEdit?'<br><a href="'+esc(cur.formEdit)+'" target="_blank" rel="noopener">เปิดหน้าแก้ไขฟอร์ม</a>':'')+
     '<div class="row"><button class="mini" data-act="copyForm">คัดลอกลิงก์ฟอร์ม</button></div>';
 }
+var tplMode=false;
+function isDefSubmit(x){return x===DEF_SUBMIT.form||x===DEF_SUBMIT.text||TPLS.some(function(t){return t.submit===x})}
 function setType(t){
-  cur.type=t;
-  $$('#typeSeg button').forEach(function(b){b.classList.toggle('on',b.dataset.t===t)});
-  $('#pForm').hidden=t!=='form';$('#pText').hidden=t!=='text';
-  if(!cur.submit||cur.submit===DEF_SUBMIT.form||cur.submit===DEF_SUBMIT.text){cur.submit=DEF_SUBMIT[t];syncInputs()}
+  tplMode=(t==='tpl');
+  cur.type=tplMode?'text':t;
+  var shown=tplMode?'tpl':cur.type;
+  $$('#typeSeg button').forEach(function(b){b.classList.toggle('on',b.dataset.t===shown)});
+  $('#pForm').hidden=shown!=='form';$('#pText').hidden=shown!=='text';$('#pTpl').hidden=shown!=='tpl';
+  if(!cur.submit||isDefSubmit(cur.submit)){
+    var tp=tplMode&&getTpl(cur.tplId);
+    cur.submit=tp?tp.submit:DEF_SUBMIT[cur.type];syncInputs();
+  }
 }
 function renderMsg(){
   var w=$('#msgWrap');
   if(cur.message){w.hidden=false;$('#msgBox').value=cur.message}else{w.hidden=true;$('#msgBox').value=''}
   $('#saveNote').textContent=cur.id?'บันทึกในชีตแล้ว':'';
 }
-function refreshAll(){syncInputs();renderChips();renderQuiz();renderFormRes();setType(cur.type||'form');renderMsg();updYt()}
+function refreshAll(){syncInputs();renderChips();renderQuiz();renderFormRes();setType(tplMode?'tpl':(cur.type||'form'));renderTplUI();renderMsg();updYt()}
 
 function renderHistory(){
   var q=($('#histSearch').value||'').trim().toLowerCase();
@@ -713,6 +730,7 @@ var ACT={
       applyBrand();writeCache();renderSettings();toast('บันทึกการตั้งค่าแล้ว');
     }catch(e){toast(e.message,true)}finally{unbusy()}
   },
+  tplRegen:function(){if(!cur.tplId){toast('เลือกแม่แบบภาระงานก่อน',true);return}genTpl(true);toast('สร้างโจทย์ใหม่แล้ว')},
   findClips:async function(){
     try{
       need(['topic']);
@@ -1022,6 +1040,96 @@ async function doImport(close){
   catch(e){toast(e.message,true);openImport(text,term,start)}finally{unbusy()}
 }
 
+/* ======================= แม่แบบภาระงาน ======================= */
+function nz(v,d){v=String(v==null?'':v).trim();return v||d}
+var SUB_PAPER='ส่งชิ้นงานบนกระดาษ A4 ให้ครูที่ดูแลคาบเมื่อหมดคาบ';
+var TPLS=[
+ {id:'mindmap',label:'🧠 ผังความคิด (ระบายสีบน A4)',fields:[],submit:SUB_PAPER,
+  build:function(c){var t=nz(c.topic,'(หัวข้อ)');return ['ทำผังความคิด (Mind Map) เรื่อง “'+t+'” ลงบนกระดาษ A4 ระบายสีให้สวยงาม',
+   '1) อ่านใบความรู้/ดูคลิปเรื่อง “'+t+'” ให้เข้าใจก่อนลงมือทำ',
+   '2) เขียนหัวข้อ “'+t+'” ไว้ตรงกลางกระดาษ',
+   '3) แตกกิ่งหลักอย่างน้อย 4 กิ่ง และกิ่งย่อยกิ่งละอย่างน้อย 2 ข้อ เขียนสรุปด้วยคำหรือข้อความสั้น ๆ',
+   '4) ระบายสีแยกตามกิ่ง วาดภาพประกอบได้ตามต้องการ ให้สวยงามเรียบร้อย',
+   '5) เขียนชื่อ-สกุล ชั้น เลขที่ ไว้มุมกระดาษ'].join('\n')}},
+ {id:'venn',label:'🔵🟠 ใบงาน Compare and Contrast (Venn Diagram, ระบายสีบน A4)',submit:SUB_PAPER,
+  fields:[{k:'a',label:'สิ่งที่ 1 ที่ใช้เปรียบเทียบ',ph:'เช่น กาพย์ยานี 11'},{k:'b',label:'สิ่งที่ 2 ที่ใช้เปรียบเทียบ',ph:'เช่น กลอนสุภาพ'},{k:'asp',label:'ประเด็นที่ให้เปรียบเทียบ (ไม่บังคับ)',ph:'เช่น จำนวนคำ สัมผัส ลักษณะเด่น'}],
+  build:function(c,p){var t=nz(c.topic,'(หัวข้อ)'),a=nz(p.a,'(สิ่งที่ 1)'),b=nz(p.b,'(สิ่งที่ 2)'),asp=nz(p.asp,'');
+   return ['ทำใบงาน Compare and Contrast (แผนภาพเวนน์) เรื่อง “'+t+'” บนกระดาษ A4 ระบายสีให้สวยงาม','คู่เปรียบเทียบ: “'+a+'” กับ “'+b+'”'+(asp?' (เปรียบเทียบในประเด็น: '+asp+')':''),
+   '1) วาดวงกลมซ้อนกัน 2 วงบนกระดาษ A4 (แผนภาพเวนน์)',
+   '2) เขียนชื่อ “'+a+'” ไว้วงซ้าย และ “'+b+'” ไว้วงขวา',
+   '3) ส่วนที่ไม่ซ้อนกัน เขียนความแตกต่างของแต่ละฝั่ง (ฝั่งละอย่างน้อย 3 ข้อ) ส่วนที่ซ้อนกัน เขียนความเหมือน (อย่างน้อย 3 ข้อ)',
+   '4) ระบายสีแต่ละส่วนให้ต่างกันและสวยงาม',
+   '5) เขียนชื่อ-สกุล ชั้น เลขที่ ไว้มุมกระดาษ'].join('\n')}},
+ {id:'kapyani',label:'✍️ แต่งกาพย์ยานี 11',submit:DEF_SUBMIT.text,
+  fields:[{k:'n',label:'จำนวนบท',def:'2',type:'number'},{k:'lines',label:'จำนวนบรรทัด (เว้นว่าง = บทละ 2 บรรทัด)',type:'number'}],
+  build:function(c,p){var t=nz(c.topic,'(หัวข้อ)'),n=nz(p.n,'2'),L=nz(p.lines,String((+n||0)*2));
+   return ['แต่งกาพย์ยานี 11 เรื่อง “'+t+'” จำนวน '+n+' บท (รวม '+L+' บรรทัด) ลงในสมุด',
+   '1) ทบทวนฉันทลักษณ์กาพย์ยานี 11 จากใบความรู้/คลิป (บาทละ 2 วรรค วรรคหน้า 5 คำ วรรคหลัง 6 คำ)',
+   '2) แต่งเนื้อหาให้เกี่ยวกับเรื่อง “'+t+'” และส่งสัมผัสให้ถูกต้องตามแบบกาพย์ยานี 11',
+   '3) ตั้งชื่อเรื่อง เขียนด้วยลายมือที่อ่านง่าย พร้อมชื่อ-สกุล ชั้น เลขที่'].join('\n')}},
+ {id:'klon',label:'✍️ แต่งกลอนสุภาพ',submit:DEF_SUBMIT.text,
+  fields:[{k:'n',label:'จำนวนบท',def:'2',type:'number'},{k:'lines',label:'จำนวนบรรทัด (ไม่บังคับ)',type:'number'}],
+  build:function(c,p){var t=nz(c.topic,'(หัวข้อ)'),n=nz(p.n,'2'),L=nz(p.lines,'');
+   return ['แต่งกลอนสุภาพ เรื่อง “'+t+'” จำนวน '+n+' บท (1 บท = 4 วรรค)'+(L?' รวม '+L+' บรรทัด':'')+' ลงในสมุด',
+   '1) ทบทวนฉันทลักษณ์กลอนสุภาพจากใบความรู้/คลิป (วรรคละ 6–8 คำ)',
+   '2) แต่งเนื้อหาให้เกี่ยวกับเรื่อง “'+t+'” และส่งสัมผัสให้ถูกต้องตามแบบกลอนสุภาพ',
+   '3) ตั้งชื่อเรื่อง เขียนด้วยลายมือที่อ่านง่าย พร้อมชื่อ-สกุล ชั้น เลขที่'].join('\n')}},
+ {id:'khlong',label:'✍️ แต่งโคลงสี่สุภาพ',submit:DEF_SUBMIT.text,
+  fields:[{k:'n',label:'จำนวนบท',def:'1',type:'number'},{k:'lines',label:'จำนวนบรรทัด (เว้นว่าง = บทละ 4 บรรทัด)',type:'number'}],
+  build:function(c,p){var t=nz(c.topic,'(หัวข้อ)'),n=nz(p.n,'1'),L=nz(p.lines,String((+n||0)*4));
+   return ['แต่งโคลงสี่สุภาพ เรื่อง “'+t+'” จำนวน '+n+' บท (1 บท = 4 บาท รวม '+L+' บรรทัด) ลงในสมุด',
+   '1) ทบทวนฉันทลักษณ์โคลงสี่สุภาพจากใบความรู้/คลิป (บังคับเอก–โทตามแผนผัง)',
+   '2) แต่งเนื้อหาให้เกี่ยวกับเรื่อง “'+t+'” ใช้คำเอก–โทและส่งสัมผัสให้ถูกต้อง',
+   '3) ตั้งชื่อเรื่อง เขียนด้วยลายมือที่อ่านง่าย พร้อมชื่อ-สกุล ชั้น เลขที่'].join('\n')}},
+ {id:'essay',label:'📝 เขียนเรียงความลงสมุด',submit:DEF_SUBMIT.text,
+  fields:[{k:'lines',label:'จำนวนบรรทัดไม่น้อยกว่า',def:'15',type:'number'}],
+  build:function(c,p){var t=nz(c.topic,'(หัวข้อ)'),L=nz(p.lines,'15');
+   return ['เขียนเรียงความเรื่อง “'+t+'” ลงในสมุด ความยาวไม่น้อยกว่า '+L+' บรรทัด',
+   '1) วางโครงเรื่อง: คำนำ เนื้อเรื่อง และสรุป',
+   '2) ใช้ภาษาถูกต้องตามหลักภาษา สะกดคำถูกต้อง ใช้ถ้อยคำสละสลวย',
+   '3) เขียนด้วยลายมือที่อ่านง่าย พร้อมชื่อ-สกุล ชั้น เลขที่'].join('\n')}},
+ {id:'opinion',label:'🎬 ดูคลิปและเขียนแสดงความคิดเห็น',submit:DEF_SUBMIT.text,needClip:true,
+  fields:[{k:'lines',label:'จำนวนบรรทัดไม่น้อยกว่า',def:'10',type:'number'}],
+  build:function(c,p){var t=nz(c.topic,'(หัวข้อ)'),L=nz(p.lines,'10');
+   return ['ดูคลิปตามลิงก์ข้างต้น เรื่อง “'+t+'” แล้วเขียนแสดงความคิดเห็นลงในสมุด ความยาวไม่น้อยกว่า '+L+' บรรทัด',
+   '1) สรุปสิ่งที่ได้เรียนรู้จากคลิปด้วยภาษาของตนเอง',
+   '2) แสดงความคิดเห็นพร้อมเหตุผลประกอบ และบอกว่านำไปใช้ในชีวิตประจำวันได้อย่างไร',
+   '3) เขียนด้วยลายมือที่อ่านง่าย พร้อมชื่อ-สกุล ชั้น เลขที่'].join('\n')}},
+ {id:'recite',label:'🎤 ถ่ายคลิปการอ่านออกเสียงทำนองเสนาะ',submit:'ถ่ายคลิปแล้วส่งตามช่องทางที่ครูแจ้ง',
+  fields:[{k:'kind',label:'ประเภทคำประพันธ์',type:'select',opts:['กาพย์ยานี 11','กลอนสุภาพ','โคลงสี่สุภาพ','กลอนอื่น ๆ'],def:'กาพย์ยานี 11'},{k:'reading',label:'บทที่ให้อ่าน (ชื่อเรื่อง/บทประพันธ์ ไม่บังคับ)',ph:'เช่น บทที่ครูแจกในใบความรู้'}],
+  build:function(c,p){var t=nz(c.topic,'(หัวข้อ)'),k=nz(p.kind,'ทำนองเสนาะ'),r=nz(p.reading,'');
+   return ['ถ่ายคลิปการอ่านออกเสียงทำนองเสนาะ ('+k+') เรื่อง “'+t+'”'+(r?'\nบทที่ให้อ่าน: '+r:''),
+   '1) ฝึกอ่านทำนองเสนาะ'+(k==='กลอนอื่น ๆ'?'':' '+k)+' ให้ถูกต้องตามจังหวะและทำนอง (ฟังตัวอย่างจากคลิป/ใบความรู้)',
+   '2) ถ่ายคลิปตนเองขณะอ่าน ให้เห็นหน้าและได้ยินเสียงชัดเจน แสงสว่างเพียงพอ',
+   '3) แนะนำตัว (ชื่อ-สกุล ชั้น เลขที่) ก่อนเริ่มอ่าน',
+   '4) ส่งคลิปตามช่องทางที่ครูกำหนด'].join('\n')}}
+];
+function getTpl(id){for(var i=0;i<TPLS.length;i++)if(TPLS[i].id===id)return TPLS[i];return null}
+function initTpl(){var s=$('#tplSel');if(s.options.length>1)return;TPLS.forEach(function(t){var o=document.createElement('option');o.value=t.id;o.textContent=t.label;s.appendChild(o)})}
+function renderTplUI(){
+  initTpl();
+  var t=getTpl(cur.tplId),box=$('#tplFields');$('#tplSel').value=cur.tplId||'';
+  if(!t){box.innerHTML='';return}
+  cur.tplp=cur.tplp||{};
+  box.innerHTML='<div class="g2">'+t.fields.map(function(f){
+    var v=cur.tplp[f.k]!=null?cur.tplp[f.k]:(f.def||'');
+    var inp=f.type==='select'?'<select data-tf="'+f.k+'">'+f.opts.map(function(o){return '<option'+(o===v?' selected':'')+'>'+esc(o)+'</option>'}).join('')+'</select>'
+      :'<input type="'+(f.type==='number'?'number':'text')+'"'+(f.type==='number'?' min="1" inputmode="numeric"':'')+' data-tf="'+f.k+'" value="'+esc(v)+'" placeholder="'+esc(f.ph||'')+'"/>';
+    return '<div><label class="f">'+esc(f.label)+'</label>'+inp+'</div>';
+  }).join('')+'</div>'+(t.needClip&&!cur.clip?'<div class="warn-l">ยังไม่ได้ใส่ลิงก์คลิปการสอนในขั้นที่ 2 — ใส่ลิงก์คลิปเพื่อให้ข้อความมีลิงก์ให้ดู</div>':'');
+}
+function pickTpl(id){
+  var t=getTpl(id);cur.tplId=id;cur.tplp={};
+  if(t)t.fields.forEach(function(f){if(f.def)cur.tplp[f.k]=f.def});
+  if(t&&(!cur.submit||isDefSubmit(cur.submit)))cur.submit=t.submit;
+  renderTplUI();genTpl(true);
+}
+function genTpl(force){
+  var t=getTpl(cur.tplId);if(!t)return;
+  if(!force&&cur.tplAuto===false)return;
+  cur.task=t.build(cur,cur.tplp||{});cur.tplAuto=true;syncInputs();
+}
+
 /* ======================= ค้นหาคลิป / คลังเนื้อหา ======================= */
 var clipList=[];
 function updYt(){
@@ -1081,8 +1189,12 @@ document.addEventListener('click',function(e){
 });
 document.addEventListener('input',function(e){
   var t=e.target,d=t.dataset||{};
+  if(d.tf!=null){cur.tplp=cur.tplp||{};cur.tplp[d.tf]=t.value;genTpl(false);return}
+  if(t.id==='tplSel'){pickTpl(t.value);return}
   if(d.k){
     cur[d.k]=t.value;
+    if(d.k==='task')cur.tplAuto=false;
+    if(d.k==='topic'&&cur.tplId)genTpl(false);
     if(d.k==='date')renderChips();
     if(d.k==='period'){cur.time=PERIODS[t.value]||'';syncInputs();renderChips()}
     if(d.k==='level')renderChips();
