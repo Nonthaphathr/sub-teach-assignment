@@ -504,6 +504,7 @@ function fileName(){var base=[cur.level,cur.code||cur.subject,cur.topic,cur.date
 /* ======================= ข้อความ ======================= */
 function buildMessage(r){
   var L=[],n=0;
+  L.push('เนื่องจากครูติดภารกิจ'+(r.date?' ใน'+thaiDate(r.date):'')+' จึงมอบหมายภาระงานให้นักเรียนปฏิบัติดังนี้');L.push('');
   L.push('📚 ภาระงานวิชา'+(r.subject||'')+(r.code?' ('+r.code+')':'')+' ชั้น'+(r.level||''));
   L.push('📅 '+thaiDate(r.date)+(r.period?' คาบที่ '+r.period:'')+(r.time?' ('+r.time+' น.)':''));
   L.push('📖 เรื่อง: '+r.topic);
