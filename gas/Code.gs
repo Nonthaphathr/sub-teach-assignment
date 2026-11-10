@@ -681,7 +681,9 @@ function apiSyncBank(pin, json) {
   const P = PropertiesService.getScriptProperties();
   const tlId = P.getProperty('TL_SHEET_ID');
   if (!tlId) throw new Error('ยังไม่ได้ตั้งรหัสชีต teachinglog — ไปที่แท็บ "ตั้งค่า"');
-  const lock = LockService.getScriptLock(); lock.waitLock(30000);
+  // ถ้ามีรอบซิงก์ก่อนหน้ากำลังทำงานอยู่ ไม่ต้องรอล็อกนาน — แจ้งฝั่งเว็บให้รอแล้วเรียกใหม่เอง
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(3000)) return JSON.stringify({ ok: true, busy: true, added: 0, processed: 0, remaining: 1 });
   try {
     const bk = ensureSheets_().bk;
     if (p.reset) {
@@ -697,7 +699,7 @@ function apiSyncBank(pin, json) {
     const cursor = Math.max(1, +(P.getProperty('TL_CURSOR') || 1));
     const total0 = Math.max(0, bk.getLastRow() - 1);
     if (last <= cursor) return JSON.stringify({ ok: true, added: 0, processed: 0, remaining: 0, total: total0 });
-    const from = cursor + 1, to = Math.min(last, cursor + 30);
+    const from = cursor + 1, to = Math.min(last, cursor + 12);   // ทีละน้อย ให้ AI ตอบทันเวลา (เดิม 30 ทำให้หมดเวลารอ)
     const notes = sh.getRange(from, 1, to - from + 1, 8).getValues().map(function (r) {
       return { date: s_(r[6]), level: s_(r[5]), code: s_(r[3]), subject: s_(r[4]), text: s_(r[7]).trim() };
     }).filter(function (n) { return n.text; });
